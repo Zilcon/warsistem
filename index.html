@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>統合マップ・軍事シミュレータ v2.0</title>
+    <title>統合マップ・軍事シミュレータ v2.1</title>
     <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
     <style>
         body { 
@@ -14,11 +14,34 @@
             background-color: #e6e6e6; 
         }
 
+        /* --- 上部コントロール（タブ切り替え） --- */
+        #top-controls {
+            position: absolute; top: 10px; left: 0; width: 100%;
+            pointer-events: none; z-index: 50;
+            display: flex; justify-content: center;
+        }
+        .control-bar {
+            background: rgba(255,255,255,0.9);
+            padding: 8px 15px; border-radius: 30px;
+            pointer-events: auto;
+            display: flex; gap: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+        }
+        .control-bar button {
+            padding: 6px 12px; border: 1px solid #ddd;
+            background: #fff; border-radius: 15px; cursor: pointer;
+            font-size: 0.9em; font-weight: bold; color: #555;
+            transition: all 0.2s;
+        }
+        .control-bar button:hover { background: #f0f0f0; }
+        .control-bar button.active {
+            background: #2c3e50; color: #fff; border-color: #2c3e50;
+        }
+
         /* --- モーダル（ログイン） --- */
         #login-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8);
-            z-index: 9999;
+            background: rgba(0,0,0,0.8); z-index: 9999;
             display: flex; justify-content: center; align-items: center;
         }
         .login-box {
@@ -53,11 +76,11 @@
         .panel-content { padding: 15px; overflow-y: auto; max-height: 500px; }
 
         /* 左パネル（シミュレータ） */
-        #sim-panel { top: 20px; left: 20px; width: 360px; }
+        #sim-panel { top: 60px; left: 20px; width: 360px; }
         #sim-header { background-color: #2c3e50; }
 
         /* 右パネル（情報） */
-        #info-panel { top: 20px; right: 20px; width: 280px; }
+        #info-panel { top: 60px; right: 20px; width: 280px; }
         #info-header { background-color: #2980b9; }
 
         /* --- UIパーツ --- */
@@ -69,35 +92,28 @@
 
         .btn { padding: 8px 12px; cursor: pointer; border-radius: 4px; border: none; font-weight: bold; width: 100%; margin-top: 5px; }
         .btn-primary { background-color: #27ae60; color: white; }
-        .btn-danger { background-color: #c0392b; color: white; }
         .btn:disabled { background-color: #ccc; cursor: not-allowed; }
 
-        /* ステータスバー */
         .status-bar {
             background: #ecf0f1; border-radius: 4px; padding: 10px; margin-bottom: 10px;
             border-left: 5px solid #27ae60;
         }
         .status-val { font-size: 1.2em; font-weight: bold; color: #2c3e50; }
-        .status-limit { font-size: 0.9em; color: #7f8c8d; }
-
-        /* 選択状態 */
+        
         input.selecting { background-color: #d6eaf8; border-color: #3498db; }
         
-        /* テーブル */
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85em; }
         th { background: #f8f9fa; text-align: left; padding: 5px; border-bottom: 2px solid #ddd; }
         td { padding: 5px; border-bottom: 1px solid #eee; }
 
-        /* タブ切り替え風ラジオボタン */
         .mode-switch { display: flex; gap: 5px; margin-bottom: 10px; }
         .mode-switch label { 
             flex: 1; text-align: center; padding: 8px; 
             background: #eee; cursor: pointer; margin: 0; border-radius: 4px;
         }
         .mode-switch input[type="radio"] { display: none; }
-        .mode-switch input:checked + span { color: #d35400; font-weight: bold; }
-        .mode-switch label.active { background: #fadbd8; border: 1px solid #e74c3c; } /* 撤退用 */
-        .mode-switch label.active-atk { background: #d5f5e3; border: 1px solid #27ae60; } /* 攻撃用 */
+        .mode-switch label.active { background: #fadbd8; border: 1px solid #e74c3c; }
+        .mode-switch label.active-atk { background: #d5f5e3; border: 1px solid #27ae60; }
 
         #logList { font-size: 0.8em; color: #555; max-height: 100px; overflow-y: auto; margin-top: 10px; padding-left: 20px; }
     </style>
@@ -111,6 +127,11 @@
             <input type="text" id="loginCountry" placeholder="例: A国" value="A国">
             <button class="btn btn-primary" style="margin-top:15px;" onclick="handleLogin()">作戦開始</button>
         </div>
+    </div>
+
+    <div id="top-controls">
+        <div class="control-bar" id="tab-container">
+            </div>
     </div>
 
     <div id="map-container">
@@ -145,11 +166,9 @@
             <span>⚔️ 軍事司令部 (<span id="playerDisplay">未ログイン</span>)</span>
         </div>
         <div class="panel-content">
-            
             <div class="status-bar">
                 <div>残り運用可能兵力</div>
-                <div><span id="remainMilitary" class="status-val">---</span> <span class="status-limit">/ <span id="maxMilitary">---</span></span></div>
-                <div style="font-size:0.8em; color:#666;">(総兵力 - 配備済 - 命令分)</div>
+                <div><span id="remainMilitary" class="status-val">---</span> <span style="font-size:0.9em;color:#777;">/ <span id="maxMilitary">---</span></span></div>
             </div>
 
             <div class="mode-switch">
@@ -165,15 +184,10 @@
 
             <div id="attackForm">
                 <div class="row">
-                    <div class="col">
-                        <input id="fromInput" type="text" placeholder="From (自国領)" readonly>
-                    </div>
+                    <div class="col"><input id="fromInput" type="text" placeholder="From (自国領)" readonly></div>
                     <span style="font-weight:bold;">➡</span>
-                    <div class="col">
-                        <input id="toInput" type="text" placeholder="To (隣接敵領)" readonly>
-                    </div>
+                    <div class="col"><input id="toInput" type="text" placeholder="To (隣接敵領)" readonly></div>
                 </div>
-                
                 <div class="row" id="powerRow">
                     <div class="col">
                         <label style="margin-top:5px;">投入兵力</label>
@@ -196,7 +210,6 @@
             </div>
 
             <button id="sendBtn" class="btn btn-primary" style="margin-top:15px; background-color:#2980b9;">作戦送信</button>
-
             <ul id="logList"></ul>
         </div>
     </div>
@@ -214,16 +227,18 @@
     // ==========================================
     // 設定 & グローバル変数
     // ==========================================
-    // ★ Cloudflare WorkersのURLをここに設定
+    // ★ Cloudflare Workers URLを設定
     const API_URL = "https://flat-waterfall-6b98.zilcon211006.workers.dev/";
 
     let currentPlayer = "";
-    let mapData = [];     // 全マップデータ
-    let adjacency = {};   // 隣接リスト { "StateA": ["StateB", "StateC"], ... }
-    let countryStats = {}; // { "A国": { military: 10000, ... } }
-    let orders = [];      // 注文リスト
+    let mapHeaders = []; // ヘッダー情報 ["ID", "国", "兵力", "開発", ...]
+    let mapData = [];    // データ行
+    let adjacency = {};  
+    let countryStats = {}; 
+    let orders = [];     
 
-    let inputTargetMode = null; // 'from' or 'to'
+    let currentTab = "国"; // 現在選択中のタブ
+    let inputTargetMode = null; 
     let panZoomInstance = null;
     let isDraggingMap = false;
 
@@ -238,7 +253,6 @@
         document.getElementById('playerDisplay').textContent = currentPlayer;
         document.getElementById('login-overlay').style.display = 'none';
         
-        // データロード開始
         loadGameData();
         initSimulatorUI();
     }
@@ -250,8 +264,6 @@
             if (data.MapData) processMapData(data.MapData);
             if (data.CountryData) processCountryData(data.CountryData);
             if (data.AdjacencyData) processAdjacency(data.AdjacencyData);
-            
-            // 初回計算
             updateMilitaryBudget();
             log("通信確立: データ同期完了");
         })
@@ -262,54 +274,94 @@
     }
 
     // ==========================================
-    // 2. データ処理
+    // 2. データ処理 (修正点: ヘッダー保存とタブ生成)
     // ==========================================
     function processMapData(rawMap) {
-        // [ID, 国, 兵力, 開発, 地形, 首都, Color(Hex)]
-        // ヘッダーを除去して格納
+        // rawMap[0] = ヘッダー, rawMap[1...] = データ
+        mapHeaders = rawMap[0];
         mapData = rawMap.slice(1);
-        renderMap();
+        
+        setupTabs(); // タブ生成
+        renderMap(); // 初期描画
+    }
+
+    function setupTabs() {
+        const container = document.getElementById('tab-container');
+        container.innerHTML = '';
+
+        // ID(0)やColor(6)などはタブにしない。表示したい列だけ抽出
+        // 例: 国(1), 兵力(2), 開発(3), 地形(4)
+        mapHeaders.forEach((header, index) => {
+            // タブ除外ルール
+            if (index === 0 || header === 'Color' || header === 'ID' || header === '首都') return;
+
+            const btn = document.createElement('button');
+            btn.textContent = header;
+            if (header === currentTab) btn.classList.add('active');
+            
+            btn.onclick = () => {
+                currentTab = header;
+                // ボタンの見た目更新
+                document.querySelectorAll('#tab-container button').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                // マップ再描画
+                renderMap();
+            };
+            container.appendChild(btn);
+        });
     }
 
     function processCountryData(rawCountry) {
-        // [国名, 駐屯設定, 軍事, 経済, ...]
         countryStats = {};
         rawCountry.slice(1).forEach(row => {
-            countryStats[row[0]] = {
-                totalMilitary: parseInt(row[2]) || 0
-            };
+            countryStats[row[0]] = { totalMilitary: parseInt(row[2]) || 0 };
         });
     }
 
     function processAdjacency(rawAdj) {
         adjacency = {};
         rawAdj.slice(1).forEach(row => {
-            // row[0] = 元, row[1...] = 隣接
-            const from = row[0];
-            const neighbors = row.slice(1).filter(n => n && n !== "");
-            adjacency[from] = neighbors;
+            adjacency[row[0]] = row.slice(1).filter(n => n && n !== "");
         });
     }
 
     // ==========================================
-    // 3. マップ描画 & 制御
+    // 3. マップ描画 (修正点: グラデーション対応)
     // ==========================================
     function renderMap() {
-        // SVGがDOMにある前提で、pathの色を更新
         const paths = document.querySelectorAll('path');
+        const colIndex = mapHeaders.indexOf(currentTab);
+        
+        // ヘッダーが見つからない場合(Colorなど)のフォールバック
+        const colorIndex = mapHeaders.indexOf('Color'); 
+
         paths.forEach(path => {
             const row = mapData.find(r => String(r[0]).trim() === path.id.trim());
             if (row) {
-                // G列 = インデックス6 (Color)
-                const color = row[6] || '#cccccc';
-                path.style.fill = color;
-                path.style.stroke = "#fff";
-                path.style.strokeWidth = "1px";
+                // デフォルト色
+                let fillColor = '#eee';
+
+                if (currentTab === '国' || currentTab === '所有国' || currentTab === 'Country') {
+                    // ★ 国モード: Color列(通常6番目)を使用
+                    fillColor = (colorIndex > -1) ? row[colorIndex] : '#ccc';
+                } else {
+                    // ★ 数値モード: 1-100グラデーション (白 -> 赤)
+                    let val = parseFloat(row[colIndex]);
+                    if (isNaN(val)) val = 0;
+                    fillColor = getGradientColor(val);
+                }
+
+                path.style.fill = fillColor;
                 
-                // 自国領土を目立たせる（オプション）
+                // 自国の強調表示（枠線）
                 if (row[1] === currentPlayer) {
-                    path.style.stroke = "#f1c40f"; 
+                    path.style.stroke = "#f1c40f"; // ゴールド
                     path.style.strokeWidth = "2px";
+                    // 国モード以外でも自国がわかるように少し透過させるなどの工夫も可能だが
+                    // ここでは枠線のみ強調
+                } else {
+                    path.style.stroke = "#fff";
+                    path.style.strokeWidth = "1px";
                 }
             }
         });
@@ -317,8 +369,21 @@
         if (!panZoomInstance) initPanZoom();
     }
 
+    // 0〜100の値を 白(255,255,255) 〜 赤(255,0,0) に変換する関数
+    function getGradientColor(value) {
+        // 範囲制限
+        if (value < 0) value = 0;
+        if (value > 100) value = 100;
+
+        // 白(255,255,255) -> 赤(255,0,0)
+        // Redは常に255, GreenとBlueを減らしていく
+        const gb = Math.floor(255 - (value * 2.55));
+        
+        return `rgb(255, ${gb}, ${gb})`;
+    }
+
     function initPanZoom() {
-        const svgElement = document.querySelector('#wrapper'); // HTML内にSVGを含める必要があります
+        const svgElement = document.querySelector('#wrapper');
         if(!svgElement) return;
 
         panZoomInstance = svgPanZoom(svgElement, {
@@ -328,19 +393,12 @@
             onZoom: () => { isDraggingMap = true; }
         });
 
-        // ドラッグ終了判定
-        document.getElementById('map-container').addEventListener('mouseup', (e) => {
-            if (isDraggingMap) {
-                setTimeout(() => isDraggingMap = false, 50); // 微妙なズレ防止
-            }
+        document.getElementById('map-container').addEventListener('mouseup', () => {
+            if (isDraggingMap) setTimeout(() => isDraggingMap = false, 50);
         });
     }
 
-    // SVGクリックイベントハンドラ (SVG内のPathに onclick="onStateClick(this)" を想定、あるいは以下で付与)
-    // 今回は全 path に対してイベントリスナーを設定する方式
-    // ※ 実際のSVGロード処理が必要です。ここでは既存のHTML構造を利用すると仮定
-    
-    // 簡易的なSVGクリック検知
+    // マップクリック制御
     document.getElementById('map-container').addEventListener('click', (e) => {
         if(isDraggingMap) return;
         const path = e.target.closest('path');
@@ -348,38 +406,30 @@
     });
 
     function handleMapClick(stateId) {
-        // 情報表示
         showStateInfo(stateId);
 
-        // 入力モードの処理
         if (inputTargetMode === 'from') {
-            // ルール: 攻撃元は自国領土のみ
-            const stateInfo = mapData.find(r => r[0] === stateId);
-            if (!stateInfo || stateInfo[1] !== currentPlayer) {
-                return alert("選択できません。\n攻撃元は「自国領土」である必要があります。");
+            const row = mapData.find(r => r[0] === stateId);
+            if (!row || row[1] !== currentPlayer) {
+                return alert("攻撃元は「自国領土」である必要があります。");
             }
             document.getElementById('fromInput').value = stateId;
-            setInputMode(null); // 解除
+            setInputMode(null);
 
-            // 撤退モードならToは不要なので自動で自分を設定
             const mode = document.querySelector('input[name="missionMode"]:checked').value;
             if (mode === 'RETREAT') {
-                document.getElementById('toInput').value = stateId; // 撤退先は自分（または空）
+                document.getElementById('toInput').value = stateId; 
             } else {
-                // 攻撃モードなら次はToを選択させる
                 setInputMode('to');
             }
-
         } else if (inputTargetMode === 'to') {
             const fromVal = document.getElementById('fromInput').value;
             if (!fromVal) return alert("先に攻撃元(From)を選択してください");
 
-            // ルール: 攻撃先は隣接領土のみ
             const neighbors = adjacency[fromVal] || [];
             if (!neighbors.includes(stateId)) {
-                return alert(`選択できません。\n${fromVal} と隣接していません。`);
+                return alert(`${fromVal} と隣接していません。`);
             }
-
             document.getElementById('toInput').value = stateId;
             setInputMode(null);
         }
@@ -389,16 +439,17 @@
         const row = mapData.find(r => r[0] === id);
         const box = document.getElementById('infoBox');
         if (row) {
-            box.innerHTML = `
-                <h3>${id}</h3>
-                <ul>
-                    <li><strong>所有国:</strong> ${row[1]}</li>
-                    <li><strong>駐留軍:</strong> ${row[2]}</li>
-                    <li><strong>開発度:</strong> ${row[3]}</li>
-                    <li><strong>地形:</strong> ${row[4]}</li>
-                    <li><strong>首都:</strong> ${row[5] ? '★' : '-'}</li>
-                </ul>
-            `;
+            // mapHeadersを使って動的に表示
+            let listHtml = "";
+            mapHeaders.forEach((h, i) => {
+                // ColorやIDは除外して表示
+                if(h !== 'Color' && h !== 'ID') {
+                   let val = row[i];
+                   if(h==='首都' && val) val = '★';
+                   listHtml += `<li><strong>${h}:</strong> ${val}</li>`; 
+                }
+            });
+            box.innerHTML = `<h3>${id}</h3><ul>${listHtml}</ul>`;
         } else {
             box.innerHTML = `<p>${id} のデータなし</p>`;
         }
@@ -408,7 +459,6 @@
     // 4. シミュレータロジック
     // ==========================================
     function initSimulatorUI() {
-        // 入力欄クリックでマップ選択モードへ
         document.getElementById('fromInput').addEventListener('click', () => setInputMode('from'));
         document.getElementById('toInput').addEventListener('click', () => {
             const mode = document.querySelector('input[name="missionMode"]:checked').value;
@@ -418,7 +468,6 @@
         document.getElementById('addOrderBtn').addEventListener('click', addOrder);
         document.getElementById('sendBtn').addEventListener('click', sendOrders);
         
-        // パネルドラッグ機能 (共通関数)
         makeDraggable(document.getElementById('sim-panel'), document.getElementById('sim-header'));
         makeDraggable(document.getElementById('info-panel'), document.getElementById('info-header'));
     }
@@ -430,7 +479,6 @@
         const toInput = document.getElementById('toInput');
         const powerRow = document.getElementById('powerRow');
 
-        // UIリセット
         document.getElementById('fromInput').value = "";
         document.getElementById('toInput').value = "";
         setInputMode(null);
@@ -440,15 +488,14 @@
             lblRet.classList.remove('active');
             toInput.placeholder = "To (隣接敵領)";
             toInput.disabled = false;
-            powerRow.style.display = 'flex'; // 兵力入力あり
+            powerRow.style.display = 'flex';
         } else {
-            // 撤退モード
             lblRet.classList.add('active');
             lblAtk.classList.remove('active-atk');
             toInput.placeholder = "-(対象は自国)-";
             toInput.value = "撤退指示";
             toInput.disabled = true;
-            powerRow.style.display = 'none'; // 撤退に兵力指定は不要（全軍撤退orフラグ立て）
+            powerRow.style.display = 'none';
         }
     }
 
@@ -463,44 +510,28 @@
         if (mode === 'to') toIn.classList.add('selecting');
     }
 
-    // 軍事力計算 & 更新
     function updateMilitaryBudget() {
         if (!countryStats[currentPlayer]) return;
-
         const max = countryStats[currentPlayer].totalMilitary;
-        
-        // 1. マップ上の自国領土の兵力合計
         let deployed = 0;
         mapData.forEach(r => {
             if (r[1] === currentPlayer) deployed += parseInt(r[2]) || 0;
         });
-
-        // 2. 現在の命令リストの使用分
         let ordered = 0;
-        orders.forEach(o => {
-            if (o.type === 'ATTACK') ordered += o.power;
-        });
-
-        // 3. 新規駐屯分
+        orders.forEach(o => { if (o.type === 'ATTACK') ordered += o.power; });
         const garrison = parseInt(document.getElementById('garrisonInput').value) || 0;
-
-        const remaining = max - (deployed + ordered + garrison); // 単純計算（仕様に合わせて調整可）
-        // ※仕様「攻撃、駐屯、自国ステートの合計が値を超えない」 = max >= deployed + ordered + garrison
+        const remaining = max - (deployed + ordered + garrison);
 
         document.getElementById('maxMilitary').textContent = max.toLocaleString();
         const elRemain = document.getElementById('remainMilitary');
         elRemain.textContent = remaining.toLocaleString();
-
-        if (remaining < 0) elRemain.style.color = "red";
-        else elRemain.style.color = "#2c3e50";
-
+        elRemain.style.color = remaining < 0 ? "red" : "#2c3e50";
         return remaining;
     }
 
     function addOrder() {
         const mode = document.querySelector('input[name="missionMode"]:checked').value;
         const from = document.getElementById('fromInput').value;
-        
         if (!from) return alert("場所を選択してください");
 
         if (mode === 'ATTACK') {
@@ -508,22 +539,16 @@
             const power = parseInt(document.getElementById('attackPower').value);
             if (!to) return alert("攻撃先を選択してください");
             if (isNaN(power) || power <= 0) return alert("兵力を入力してください");
-
-            // 予算チェック
+            
             const budget = updateMilitaryBudget();
-            if (budget < power) return alert("兵力が不足しています！\n(総兵力上限を超過します)");
+            if (budget < power) return alert("兵力が不足しています！");
 
             orders.push({ type: 'ATTACK', from, to, power, label: '攻撃' });
-
         } else {
-            // RETREAT
             orders.push({ type: 'RETREAT', from, to: from, power: 0, label: '撤退' });
         }
-
         renderOrderList();
         updateMilitaryBudget();
-        
-        // 入力クリア
         document.getElementById('fromInput').value = "";
         if (mode === 'ATTACK') document.getElementById('toInput').value = "";
     }
@@ -533,10 +558,8 @@
         tbody.innerHTML = '';
         orders.forEach((o, idx) => {
             const tr = document.createElement('tr');
-            // 撤退の場合はToを表示しないか、自分を表示
             const toDisplay = (o.type === 'RETREAT') ? '-' : o.to;
             const powerDisplay = (o.type === 'RETREAT') ? '-' : o.power;
-            
             tr.innerHTML = `
                 <td><span style="font-size:0.8em; padding:2px 4px; border-radius:3px; background:${o.type==='ATTACK'?'#e8f8f5':'#fdedec'}; color:${o.type==='ATTACK'?'green':'red'};">${o.label}</span></td>
                 <td>${o.from}</td>
@@ -566,7 +589,7 @@
         const payload = {
             country: currentPlayer,
             garrison: document.getElementById('garrisonInput').value,
-            attacks: orders // サーバー側で attacks として受け取るが、type='RETREAT'も含む
+            attacks: orders 
         };
 
         fetch(API_URL, {
@@ -605,7 +628,6 @@
     function makeDraggable(element, handle) {
         let isDragging = false;
         let startX, startY, initialLeft, initialTop;
-
         handle.addEventListener('mousedown', (e) => {
             isDragging = true;
             startX = e.clientX; startY = e.clientY;
@@ -614,7 +636,6 @@
             e.stopPropagation(); e.preventDefault();
             element.style.opacity = '0.8';
         });
-
         document.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
             const dx = e.clientX - startX;
@@ -622,14 +643,11 @@
             element.style.left = `${initialLeft + dx}px`;
             element.style.top = `${initialTop + dy}px`;
         });
-
         document.addEventListener('mouseup', () => {
             if(isDragging) { isDragging = false; element.style.opacity = '0.96'; }
         });
-        
         element.addEventListener('mousedown', e => e.stopPropagation());
     }
     </script>
 </body>
 </html>
-
