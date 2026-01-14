@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>統合マップ・軍事シミュレータ v2.1</title>
+    <title>統合マップ・軍事シミュレータ v2.2 (上陸対応版)</title>
     <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
     <style>
         body { 
@@ -76,7 +76,7 @@
         .panel-content { padding: 15px; overflow-y: auto; max-height: 500px; }
 
         /* 左パネル（シミュレータ） */
-        #sim-panel { top: 60px; left: 20px; width: 360px; }
+        #sim-panel { top: 60px; left: 20px; width: 380px; }
         #sim-header { background-color: #2c3e50; }
 
         /* 右パネル（情報） */
@@ -174,7 +174,7 @@
             <div class="mode-switch">
                 <label id="lblAttack" class="active-atk">
                     <input type="radio" name="missionMode" value="ATTACK" checked onchange="switchMode()">
-                    <span>⚔️ 侵攻</span>
+                    <span>⚔️ 侵攻・上陸</span>
                 </label>
                 <label id="lblRetreat">
                     <input type="radio" name="missionMode" value="RETREAT" onchange="switchMode()">
@@ -186,7 +186,7 @@
                 <div class="row">
                     <div class="col"><input id="fromInput" type="text" placeholder="From (自国領)" readonly></div>
                     <span style="font-weight:bold;">➡</span>
-                    <div class="col"><input id="toInput" type="text" placeholder="To (隣接敵領)" readonly></div>
+                    <div class="col"><input id="toInput" type="text" placeholder="To (敵領/海路)" readonly></div>
                 </div>
                 <div class="row" id="powerRow">
                     <div class="col">
@@ -200,7 +200,7 @@
             </div>
 
             <table id="orderTable">
-                <thead><tr><th>任務</th><th>From</th><th>To</th><th>兵力</th><th></th></tr></thead>
+                <thead><tr><th>Type</th><th>From</th><th>To</th><th>兵力</th><th></th></tr></thead>
                 <tbody></tbody>
             </table>
 
@@ -228,16 +228,16 @@
     // 設定 & グローバル変数
     // ==========================================
     // ★ Cloudflare Workers URLを設定
-    const API_URL = "https://flat-waterfall-6b98.zilcon211006.workers.dev/";
+    const API_URL = "https://wild-pond-809d.zilcon211006.workers.dev/";
 
     let currentPlayer = "";
-    let mapHeaders = []; // ヘッダー情報 ["ID", "国", "兵力", "開発", ...]
-    let mapData = [];    // データ行
+    let mapHeaders = []; 
+    let mapData = [];    
     let adjacency = {};  
     let countryStats = {}; 
     let orders = [];     
 
-    let currentTab = "国"; // 現在選択中のタブ
+    let currentTab = "国"; 
     let inputTargetMode = null; 
     let panZoomInstance = null;
     let isDraggingMap = false;
@@ -248,7 +248,6 @@
     function handleLogin() {
         const val = document.getElementById('loginCountry').value.trim();
         if(!val) return alert("国名を入力してください");
-        
         currentPlayer = val;
         document.getElementById('playerDisplay').textContent = currentPlayer;
         document.getElementById('login-overlay').style.display = 'none';
@@ -274,37 +273,27 @@
     }
 
     // ==========================================
-    // 2. データ処理 (修正点: ヘッダー保存とタブ生成)
+    // 2. データ処理
     // ==========================================
     function processMapData(rawMap) {
-        // rawMap[0] = ヘッダー, rawMap[1...] = データ
         mapHeaders = rawMap[0];
         mapData = rawMap.slice(1);
-        
-        setupTabs(); // タブ生成
-        renderMap(); // 初期描画
+        setupTabs();
+        renderMap();
     }
 
     function setupTabs() {
         const container = document.getElementById('tab-container');
         container.innerHTML = '';
-
-        // ID(0)やColor(6)などはタブにしない。表示したい列だけ抽出
-        // 例: 国(1), 兵力(2), 開発(3), 地形(4)
         mapHeaders.forEach((header, index) => {
-            // タブ除外ルール
             if (index === 0 || header === 'Color' || header === 'ID' || header === '首都') return;
-
             const btn = document.createElement('button');
             btn.textContent = header;
             if (header === currentTab) btn.classList.add('active');
-            
             btn.onclick = () => {
                 currentTab = header;
-                // ボタンの見た目更新
                 document.querySelectorAll('#tab-container button').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                // マップ再描画
                 renderMap();
             };
             container.appendChild(btn);
@@ -326,41 +315,33 @@
     }
 
     // ==========================================
-    // 3. マップ描画 (修正点: グラデーション対応)
+    // 3. マップ描画 (黒い国境線)
     // ==========================================
     function renderMap() {
         const paths = document.querySelectorAll('path');
         const colIndex = mapHeaders.indexOf(currentTab);
-        
-        // ヘッダーが見つからない場合(Colorなど)のフォールバック
         const colorIndex = mapHeaders.indexOf('Color'); 
 
         paths.forEach(path => {
             const row = mapData.find(r => String(r[0]).trim() === path.id.trim());
             if (row) {
-                // デフォルト色
                 let fillColor = '#eee';
-
-                if (currentTab === '国' || currentTab === '所有国' || currentTab === 'Country') {
-                    // ★ 国モード: Color列(通常6番目)を使用
+                if (currentTab === '国' || currentTab === '所有国') {
                     fillColor = (colorIndex > -1) ? row[colorIndex] : '#ccc';
                 } else {
-                    // ★ 数値モード: 1-100グラデーション (白 -> 赤)
                     let val = parseFloat(row[colIndex]);
                     if (isNaN(val)) val = 0;
                     fillColor = getGradientColor(val);
                 }
-
                 path.style.fill = fillColor;
                 
-                // 自国の強調表示（枠線）
+                // ★ 変更点：国境線を黒色に
                 if (row[1] === currentPlayer) {
-                    path.style.stroke = "#f1c40f"; // ゴールド
-                    path.style.strokeWidth = "2px";
-                    // 国モード以外でも自国がわかるように少し透過させるなどの工夫も可能だが
-                    // ここでは枠線のみ強調
+                    path.style.stroke = "#f1c40f"; // 自国は金色の太枠
+                    path.style.strokeWidth = "2.5px";
+                    path.style.zIndex = "10"; // 前面に
                 } else {
-                    path.style.stroke = "#fff";
+                    path.style.stroke = "#000000"; // 他国・境界は黒
                     path.style.strokeWidth = "1px";
                 }
             }
@@ -369,16 +350,10 @@
         if (!panZoomInstance) initPanZoom();
     }
 
-    // 0〜100の値を 白(255,255,255) 〜 赤(255,0,0) に変換する関数
     function getGradientColor(value) {
-        // 範囲制限
         if (value < 0) value = 0;
         if (value > 100) value = 100;
-
-        // 白(255,255,255) -> 赤(255,0,0)
-        // Redは常に255, GreenとBlueを減らしていく
         const gb = Math.floor(255 - (value * 2.55));
-        
         return `rgb(255, ${gb}, ${gb})`;
     }
 
@@ -405,6 +380,9 @@
         if(path) handleMapClick(path.id);
     });
 
+    // ==========================================
+    // 4. 入力・判定ロジック (上陸戦対応)
+    // ==========================================
     function handleMapClick(stateId) {
         showStateInfo(stateId);
 
@@ -422,14 +400,27 @@
             } else {
                 setInputMode('to');
             }
+
         } else if (inputTargetMode === 'to') {
             const fromVal = document.getElementById('fromInput').value;
             if (!fromVal) return alert("先に攻撃元(From)を選択してください");
 
-            const neighbors = adjacency[fromVal] || [];
-            if (!neighbors.includes(stateId)) {
-                return alert(`${fromVal} と隣接していません。`);
+            // --- ★ 判定ロジック変更 (上陸戦) ---
+            const fromAdjs = adjacency[fromVal] || [];
+            const toAdjs = adjacency[stateId] || [];
+            
+            // 1. 直接隣接しているか？
+            const isNeighbor = fromAdjs.includes(stateId);
+            
+            // 2. 両方が海に面しているか？ (上陸戦判定)
+            const fromHasSea = fromAdjs.includes('海');
+            const toHasSea = toAdjs.includes('海');
+            const isSeaRoute = fromHasSea && toHasSea;
+
+            if (!isNeighbor && !isSeaRoute) {
+                return alert(`${fromVal} と隣接していないか、\n双方に港(海隣接)がないため攻撃できません。`);
             }
+
             document.getElementById('toInput').value = stateId;
             setInputMode(null);
         }
@@ -439,10 +430,8 @@
         const row = mapData.find(r => r[0] === id);
         const box = document.getElementById('infoBox');
         if (row) {
-            // mapHeadersを使って動的に表示
             let listHtml = "";
             mapHeaders.forEach((h, i) => {
-                // ColorやIDは除外して表示
                 if(h !== 'Color' && h !== 'ID') {
                    let val = row[i];
                    if(h==='首都' && val) val = '★';
@@ -456,7 +445,7 @@
     }
 
     // ==========================================
-    // 4. シミュレータロジック
+    // 5. シミュレータ制御
     // ==========================================
     function initSimulatorUI() {
         document.getElementById('fromInput').addEventListener('click', () => setInputMode('from'));
@@ -486,7 +475,7 @@
         if (mode === 'ATTACK') {
             lblAtk.classList.add('active-atk');
             lblRet.classList.remove('active');
-            toInput.placeholder = "To (隣接敵領)";
+            toInput.placeholder = "To (敵領/海路)";
             toInput.disabled = false;
             powerRow.style.display = 'flex';
         } else {
@@ -518,7 +507,7 @@
             if (r[1] === currentPlayer) deployed += parseInt(r[2]) || 0;
         });
         let ordered = 0;
-        orders.forEach(o => { if (o.type === 'ATTACK') ordered += o.power; });
+        orders.forEach(o => { if (o.type === 'LAND' || o.type === 'SEA') ordered += o.power; });
         const garrison = parseInt(document.getElementById('garrisonInput').value) || 0;
         const remaining = max - (deployed + ordered + garrison);
 
@@ -543,9 +532,27 @@
             const budget = updateMilitaryBudget();
             if (budget < power) return alert("兵力が不足しています！");
 
-            orders.push({ type: 'ATTACK', from, to, power, label: '攻撃' });
+            // --- ★ タイプ判定 (LAND or SEA) ---
+            let type = "LAND";
+            const fromAdjs = adjacency[from] || [];
+            // 隣接していない場合(かつエラーで弾かれていない)は上陸戦(SEA)とみなす
+            if (!fromAdjs.includes(to)) {
+                type = "SEA"; 
+            }
+
+            orders.push({ 
+                type: type, // "LAND" or "SEA"
+                mission: "攻撃", 
+                from, to, power 
+            });
+
         } else {
-            orders.push({ type: 'RETREAT', from, to: from, power: 0, label: '撤退' });
+            // RETREAT
+            orders.push({ 
+                type: "LAND", // 撤退は基本陸路扱い（または専用処理）
+                mission: "撤退",
+                from, to: from, power: 0 
+            });
         }
         renderOrderList();
         updateMilitaryBudget();
@@ -558,10 +565,22 @@
         tbody.innerHTML = '';
         orders.forEach((o, idx) => {
             const tr = document.createElement('tr');
-            const toDisplay = (o.type === 'RETREAT') ? '-' : o.to;
-            const powerDisplay = (o.type === 'RETREAT') ? '-' : o.power;
+            const toDisplay = (o.mission === '撤退') ? '-' : o.to;
+            const powerDisplay = (o.mission === '撤退') ? '-' : o.power;
+            
+            // バッジの色分け
+            let badgeColor = "#eee"; 
+            let badgeText = "#333";
+            if(o.type === 'LAND' && o.mission === '攻撃') { badgeColor = "#d5f5e3"; badgeText = "green"; }
+            if(o.type === 'SEA') { badgeColor = "#d6eaf8"; badgeText = "#2980b9"; }
+            if(o.mission === '撤退') { badgeColor = "#fadbd8"; badgeText = "#c0392b"; }
+            
+            // 表示: LAND / SEA / 撤退
+            let typeLabel = o.type;
+            if(o.mission === '撤退') typeLabel = "撤退";
+
             tr.innerHTML = `
-                <td><span style="font-size:0.8em; padding:2px 4px; border-radius:3px; background:${o.type==='ATTACK'?'#e8f8f5':'#fdedec'}; color:${o.type==='ATTACK'?'green':'red'};">${o.label}</span></td>
+                <td><span style="font-size:0.8em; padding:2px 4px; border-radius:3px; background:${badgeColor}; color:${badgeText}; font-weight:bold;">${typeLabel}</span></td>
                 <td>${o.from}</td>
                 <td>${toDisplay}</td>
                 <td>${powerDisplay}</td>
@@ -586,6 +605,8 @@
         btn.disabled = true;
         btn.textContent = "送信中...";
 
+        // ★ サーバーへの送信データ構造 (並び順などはGAS側で吸収)
+        // GAS側には { country, garrison, attacks: [ {from, to, power, type, mission}, ... ] } を送る
         const payload = {
             country: currentPlayer,
             garrison: document.getElementById('garrisonInput').value,
