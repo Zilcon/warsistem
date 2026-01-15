@@ -256,9 +256,21 @@
         initUI();
     }
 
-    function loadGameData() {
+function loadGameData() {
         fetch(API_URL)
-        .then(res => res.json())
+        .then(res => {
+            // レスポンスがOKでない、またはJSONでない場合のチェック
+            return res.text().then(text => {
+                try {
+                    return JSON.parse(text); // JSONとして解析してみる
+                } catch (e) {
+                    // JSONじゃなかった場合、中身をログに出す
+                    console.error("サーバーからの応答がJSONではありませんでした:");
+                    console.error(text); // ←ここにHTMLの中身が表示されます
+                    throw new Error("サーバーエラー: コンソールを確認してください");
+                }
+            });
+        })
         .then(data => {
             if (data.MapData) {
                 mapHeaders = data.MapData[0];
@@ -267,14 +279,13 @@
                 renderMap();
             }
             if (data.CountryData) {
-                // ヘッダー除外: A:国, B:予備, C:軍事, D:経済
                 countryDataList = data.CountryData.slice(1);
                 updateCountryStatsUI();
                 setupDiplomacyUI();
             }
             if (data.AdjacencyData) processAdjacency(data.AdjacencyData);
             if (data.WarData) {
-                warData = data.WarData.slice(1); // ヘッダー除去
+                warData = data.WarData.slice(1);
                 updateWarListUI();
             }
             updateMilitaryBudget();
@@ -282,7 +293,7 @@
         })
         .catch(err => {
             console.error(err);
-            log("データ取得失敗");
+            log("エラー: " + err.message);
         });
     }
 
@@ -615,5 +626,6 @@
     </script>
 </body>
 </html>
+
 
 
