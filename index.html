@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>統合マップ・軍事シミュレータ v2.3 (戦争システム)</title>
+    <title>統合マップ・軍事シミュレータ v3.0 (改善版)</title>
     <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
     <style>
         body { 
@@ -32,7 +32,7 @@
             display: flex; justify-content: center;
         }
         .control-bar {
-            background: rgba(255,255,255,0.9);
+            background: rgba(255,255,255,0.95);
             padding: 8px 15px; border-radius: 30px;
             pointer-events: auto;
             display: flex; gap: 8px;
@@ -42,8 +42,11 @@
             padding: 6px 12px; border: 1px solid #ddd;
             background: #fff; border-radius: 15px; cursor: pointer;
             font-size: 0.9em; font-weight: bold; color: #555;
+            transition: all 0.2s;
         }
         .control-bar button.active { background: #2c3e50; color: #fff; border-color: #2c3e50; }
+        .control-bar button:hover { background: #ecf0f1; }
+        .control-bar button.active:hover { background: #34495e; }
 
         /* --- マップエリア --- */
         #map-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
@@ -58,6 +61,7 @@
             z-index: 100;
             display: flex; flex-direction: column;
             overflow: hidden;
+            transition: opacity 0.3s;
         }
         .panel-header {
             padding: 10px 15px; color: white; cursor: move;
@@ -85,7 +89,6 @@
         .btn-danger { background-color: #c0392b; color: white; }
         .btn:disabled { background-color: #ccc; cursor: not-allowed; }
 
-        /* ステータスバー */
         .status-grid {
             display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
             background: #ecf0f1; border-radius: 4px; padding: 10px; margin-bottom: 10px;
@@ -101,12 +104,10 @@
         .mode-switch { display: flex; gap: 5px; margin-bottom: 10px; }
         .mode-switch label { flex: 1; text-align: center; padding: 8px; background: #eee; cursor: pointer; margin: 0; border-radius: 4px; }
         .mode-switch input[type="radio"] { display: none; }
-        .mode-switch label.active { background: #fadbd8; border: 1px solid #e74c3c; }
-        .mode-switch label.active-atk { background: #d5f5e3; border: 1px solid #27ae60; }
+        .mode-switch label.active { background: #fadbd8; border: 1px solid #e74c3c; color: #c0392b; font-weight: bold;}
+        .mode-switch label.active-atk { background: #d5f5e3; border: 1px solid #27ae60; color: #27ae60; font-weight: bold;}
 
         #logList { font-size: 0.8em; color: #555; max-height: 100px; overflow-y: auto; margin-top: 10px; padding-left: 20px; }
-        
-        /* 外交セクション */
         .diplomacy-box { border-top: 1px solid #ccc; margin-top: 10px; padding-top: 10px; }
         .war-tag { color: white; background: #c0392b; padding: 2px 5px; border-radius: 3px; font-size: 0.8em; margin-right: 5px; }
     </style>
@@ -160,9 +161,9 @@
             
             <div class="status-grid">
                 <div class="status-item">経済力<span id="statEconomy">---</span></div>
-                <div class="status-item">総予備兵<span id="statReserve">---</span></div>
+                <div class="status-item">現在の予備兵<span id="statReserve">---</span></div>
                 <div class="status-item" style="grid-column: span 2; margin-top:5px; border-top:1px solid #ccc; padding-top:5px;">
-                    軍事力使用率 (マップ+命令+新規)
+                    軍事力使用率 (マップ+命令+駐屯)
                     <span id="statMilitary">--- / ---</span>
                     <div id="militaryAlert" style="color:red; font-size:0.9em; display:none;">⚠️ 上限超過! 送信不可</div>
                 </div>
@@ -171,7 +172,7 @@
             <div class="mode-switch">
                 <label id="lblAttack" class="active-atk">
                     <input type="radio" name="missionMode" value="ATTACK" checked onchange="switchMode()">
-                    <span>⚔️ 侵攻・上陸</span>
+                    <span>⚔️ 侵攻</span>
                 </label>
                 <label id="lblRetreat">
                     <input type="radio" name="missionMode" value="RETREAT" onchange="switchMode()">
@@ -183,7 +184,7 @@
                 <div class="row">
                     <div class="col"><input id="fromInput" type="text" placeholder="From (自国)" readonly></div>
                     <span style="font-weight:bold;">➡</span>
-                    <div class="col"><input id="toInput" type="text" placeholder="To (敵国/海)" readonly></div>
+                    <div class="col"><input id="toInput" type="text" placeholder="To" readonly></div>
                 </div>
                 <div class="row" id="powerRow">
                     <div class="col">
@@ -201,9 +202,12 @@
                 <tbody></tbody>
             </table>
 
-            <div style="margin-top:10px;">
-                <label>新規駐屯・予備兵配備</label>
-                <input id="garrisonInput" type="number" value="0" min="0" onchange="updateMilitaryBudget()">
+            <div style="margin-top:10px; border-top: 1px dashed #ccc; padding-top:10px;">
+                <label>駐屯兵の設定 (総予備兵の変更)</label>
+                <div class="row">
+                    <input id="garrisonInput" type="number" placeholder="兵数を入力" min="0" onchange="updateMilitaryBudget()">
+                </div>
+                <p style="font-size:0.7em; color:#666; margin-top:2px;">※入力した値がそのまま総駐屯兵数になります</p>
             </div>
 
             <button id="sendBtn" class="btn btn-primary" style="margin-top:15px; background-color:#2980b9;">作戦送信</button>
@@ -229,15 +233,15 @@
     </div>
 
     <script>
-    // ★ Workers URL
+    // ★ あなたのWorkers URL (修正不要)
     const API_URL = "https://flat-waterfall-6b98.zilcon211006.workers.dev/";
 
     let currentPlayer = "";
     let mapHeaders = []; 
     let mapData = [];    
     let adjacency = {};  
-    let countryDataList = []; // 全国のデータ配列
-    let warData = []; // 戦争一覧 [宣戦国, 相手]
+    let countryDataList = []; 
+    let warData = [];
     let orders = [];     
 
     let currentTab = "国"; 
@@ -256,21 +260,9 @@
         initUI();
     }
 
-function loadGameData() {
+    function loadGameData() {
         fetch(API_URL)
-        .then(res => {
-            // レスポンスがOKでない、またはJSONでない場合のチェック
-            return res.text().then(text => {
-                try {
-                    return JSON.parse(text); // JSONとして解析してみる
-                } catch (e) {
-                    // JSONじゃなかった場合、中身をログに出す
-                    console.error("サーバーからの応答がJSONではありませんでした:");
-                    console.error(text); // ←ここにHTMLの中身が表示されます
-                    throw new Error("サーバーエラー: コンソールを確認してください");
-                }
-            });
-        })
+        .then(res => res.json())
         .then(data => {
             if (data.MapData) {
                 mapHeaders = data.MapData[0];
@@ -293,7 +285,7 @@ function loadGameData() {
         })
         .catch(err => {
             console.error(err);
-            log("エラー: " + err.message);
+            log("データ取得失敗: " + err.message);
         });
     }
 
@@ -302,15 +294,15 @@ function loadGameData() {
         raw.slice(1).forEach(r => adjacency[r[0]] = r.slice(1).filter(n=>n));
     }
 
-    // --- 2. UI更新 (ステータス・外交) ---
+    // --- 2. UI更新 ---
     function updateCountryStatsUI() {
-        // 自国のデータを探す
         const myData = countryDataList.find(row => row[0] === currentPlayer);
         if (myData) {
-            // B列:予備, C列:軍事(MAX), D列:経済
-            document.getElementById('statReserve').textContent = myData[1].toLocaleString();
+            // B列:予備, C:軍事, D:経済
+            const currentReserve = parseInt(myData[1]) || 0;
+            document.getElementById('statReserve').textContent = currentReserve.toLocaleString();
+            document.getElementById('garrisonInput').placeholder = `現在: ${currentReserve}`;
             document.getElementById('statEconomy').textContent = myData[3].toLocaleString();
-            // 軍事MAXを保存
             document.body.dataset.maxMilitary = myData[2]; 
         } else {
             document.getElementById('statReserve').textContent = "-";
@@ -334,14 +326,12 @@ function loadGameData() {
     }
 
     function updateWarListUI() {
-        // 自分が関わっている戦争を抽出
         const enemies = [];
         warData.forEach(row => {
             if (row[0] === currentPlayer) enemies.push(row[1]);
             if (row[1] === currentPlayer) enemies.push(row[0]);
         });
         const uniqueEnemies = [...new Set(enemies)];
-        
         const disp = document.getElementById('warListDisplay');
         if (uniqueEnemies.length === 0) {
             disp.textContent = "なし (平和)";
@@ -349,36 +339,31 @@ function loadGameData() {
         } else {
             disp.innerHTML = uniqueEnemies.map(e => `<span class="war-tag">${e}</span>`).join(" ");
         }
-        // グローバル変数にも保存（判定用）
         window.myEnemies = uniqueEnemies;
     }
 
     function declareWar() {
         const target = document.getElementById('targetCountrySelect').value;
         if (!target) return;
-        if (!confirm(`${target} に宣戦布告しますか？\nこれは取り消せません。`)) return;
+        if (!confirm(`${target} に宣戦布告しますか？`)) return;
 
         fetch(API_URL, {
             method: 'POST',
-            body: JSON.stringify({
-                action: "DECLARE_WAR",
-                declarer: currentPlayer,
-                target: target
-            })
+            body: JSON.stringify({ action: "DECLARE_WAR", declarer: currentPlayer, target: target })
         })
         .then(res => res.json())
         .then(data => {
             alert(data.message);
-            if (data.status === 'success') loadGameData(); // リロード
+            if (data.status === 'success') loadGameData();
         });
     }
 
-    // --- 3. マップ & ロジック ---
+    // --- 3. マップ描画 (改善版) ---
     function setupTabs() {
         const c = document.getElementById('tab-container');
         c.innerHTML = '';
         mapHeaders.forEach((h, i) => {
-            if(i===0 || h==='Color' || h==='ID' || h==='首都') return;
+            if(i===0 || h==='Color' || h==='ID') return; // '首都'などは表示したいのでID以外除外
             const b = document.createElement('button');
             b.textContent = h;
             if(h===currentTab) b.classList.add('active');
@@ -395,24 +380,65 @@ function loadGameData() {
     function renderMap() {
         const paths = document.querySelectorAll('path');
         const colIdx = mapHeaders.indexOf(currentTab);
-        const clrIdx = mapHeaders.indexOf('Color');
+        const clrIdx = mapHeaders.indexOf('Color'); // Color列のインデックス
+
+        // 地形用カラーパレット
+        const terrainColors = {
+            '1': '#aed6f1', // 水色っぽい
+            '2': '#a9dfbf', // 緑
+            '3': '#f9e79f', // 黄色
+            '4': '#e59866'  // 茶色
+        };
+
         paths.forEach(p => {
             const r = mapData.find(x => String(x[0]).trim() === p.id.trim());
             if (r) {
                 let fill = '#eee';
-                if (['国','所有国'].includes(currentTab)) fill = (clrIdx>-1 ? r[clrIdx] : '#ccc');
-                else {
+                let strokeColor = '#000';
+                
+                // 塗りつぶしの決定
+                if (currentTab === '地形(1-4)') {
+                    // ★改善: 地形1-4の色分け
+                    const val = String(r[colIdx]);
+                    fill = terrainColors[val] || '#bdc3c7';
+
+                } else if (currentTab === '首都プラグ') {
+                    // ★改善: TRUEのみ色付け
+                    fill = (String(r[colIdx]) === 'TRUE') ? '#f1c40f' : '#ecf0f1';
+
+                } else if (['国','所有国'].includes(currentTab)) {
+                    // 従来通りColor列を参照
+                    fill = (clrIdx > -1 ? r[clrIdx] : '#ccc');
+
+                } else {
+                    // 数値データのヒートマップ
                     let v = parseFloat(r[colIdx]);
                     if(isNaN(v)) v=0;
                     fill = `rgb(255, ${Math.floor(255-(v*2.55))}, ${Math.floor(255-(v*2.55))})`;
                 }
+
+                // 線の色の決定
+                // ★改善: 所有国タブ以外は、ステートの外周をColorタブの色にする
+                if (currentTab !== '所有国' && currentTab !== '国') {
+                     if (clrIdx > -1 && r[clrIdx]) {
+                         strokeColor = r[clrIdx];
+                     }
+                } else {
+                    // 所有国モードの自国境界
+                    if (r[1] === currentPlayer) strokeColor = "#f1c40f"; // 金色
+                }
+
                 p.style.fill = fill;
-                // 国境線：黒
-                p.style.stroke = (r[1]===currentPlayer) ? "#f1c40f" : "#000";
-                p.style.strokeWidth = (r[1]===currentPlayer) ? "2.5px" : "1px";
-                if (r[1]===currentPlayer) p.parentNode.appendChild(p); // 最前面へ
+                p.style.stroke = strokeColor;
+                
+                // ★改善: 自国の線を細くする (2.5px -> 1.5px)
+                p.style.strokeWidth = (r[1] === currentPlayer) ? "1.5px" : "0.5px";
+                
+                // 自国を最前面へ
+                if (r[1] === currentPlayer) p.parentNode.appendChild(p); 
             }
         });
+        
         if (!panZoomInstance) {
             const svg = document.querySelector('#wrapper');
             if(svg) panZoomInstance = svgPanZoom(svg, {zoomEnabled:true, panEnabled:true, controlIconsEnabled:false, minZoom:0.5, maxZoom:10});
@@ -422,17 +448,16 @@ function loadGameData() {
     // --- 4. シミュレーション制御 ---
     function initUI() {
         document.getElementById('fromInput').onclick = () => setInputMode('from');
-        document.getElementById('toInput').onclick = () => {
-            if(document.querySelector('input[name="missionMode"]:checked').value === 'ATTACK') setInputMode('to');
-        };
+        document.getElementById('toInput').onclick = () => setInputMode('to');
         document.getElementById('addOrderBtn').onclick = addOrder;
         document.getElementById('sendBtn').onclick = sendOrders;
+        
         document.getElementById('map-container').addEventListener('click', e => {
             if(isDraggingMap) return;
             const p = e.target.closest('path');
             if(p) handleMapClick(p.id);
         });
-        // ドラッグ用
+
         const svgW = document.getElementById('wrapper');
         if(svgW) {
             svgW.onmousedown = () => isDraggingMap = false;
@@ -446,39 +471,66 @@ function loadGameData() {
         showInfo(id);
         if (inputTargetMode === 'from') {
             const r = mapData.find(x => x[0] === id);
-            if (!r || r[1] !== currentPlayer) return alert("攻撃元は自国領土のみです");
+            if (!r || r[1] !== currentPlayer) return alert("自国領土のみ選択可能です");
             document.getElementById('fromInput').value = id;
             setInputMode(null);
-            if (document.querySelector('input[name="missionMode"]:checked').value === 'RETREAT') {
-                document.getElementById('toInput').value = id;
+            
+            // 撤退モードならFromを選んだ時点でTo入力へ(または自動設定)
+            const mode = document.querySelector('input[name="missionMode"]:checked').value;
+            if (mode === 'RETREAT') {
+                setInputMode('to'); // 撤退先を選ばせる
             } else {
                 setInputMode('to');
             }
         } else if (inputTargetMode === 'to') {
             const from = document.getElementById('fromInput').value;
-            if(!from) return alert("Fromを選択してください");
-            
-            // 隣接or海路チェック
-            const fAdj = adjacency[from]||[];
-            const tAdj = adjacency[id]||[];
-            const isNeighbor = fAdj.includes(id);
-            const isSea = fAdj.includes('海') && tAdj.includes('海');
+            if(!from) return alert("先にFromを選択してください");
 
-            if (!isNeighbor && !isSea) return alert("隣接していないか、双方に港がありません");
-
-            // ★戦争状態チェック
-            const r = mapData.find(x => x[0] === id);
-            const targetCountry = r ? r[1] : null;
-            if (targetCountry && targetCountry !== currentPlayer && targetCountry !== "中立" && targetCountry !== "") {
-                const enemies = window.myEnemies || [];
-                if (!enemies.includes(targetCountry)) {
-                    return alert(`攻撃できません。\n${targetCountry} とは戦争状態ではありません。\n先に宣戦布告を行ってください。`);
+            // 撤退モードの場合のチェック
+            const mode = document.querySelector('input[name="missionMode"]:checked').value;
+            if (mode === 'RETREAT') {
+                const r = mapData.find(x => x[0] === id);
+                if (r && r[1] !== currentPlayer) {
+                    return alert("撤退先は「自国領土」である必要があります");
                 }
+            }
+
+            // 隣接・戦争チェック
+            if (mode === 'ATTACK') {
+                if (!checkAttackValid(from, id)) return;
+            } else {
+                // 撤退の隣接チェック(撤退も隣接のみとする場合)
+                if (!checkAdjacency(from, id)) return alert("隣接地にのみ撤退できます");
             }
 
             document.getElementById('toInput').value = id;
             setInputMode(null);
         }
+    }
+
+    function checkAdjacency(from, to) {
+        const fAdj = adjacency[from]||[];
+        const tAdj = adjacency[to]||[];
+        const isNeighbor = fAdj.includes(to);
+        const isSea = fAdj.includes('海') && tAdj.includes('海'); // 海路
+        return isNeighbor || isSea;
+    }
+
+    function checkAttackValid(from, to) {
+        if (!checkAdjacency(from, to)) {
+            alert("隣接していないか、海路がありません");
+            return false;
+        }
+        const r = mapData.find(x => x[0] === to);
+        const targetCountry = r ? r[1] : null;
+        if (targetCountry && targetCountry !== currentPlayer && targetCountry !== "中立" && targetCountry !== "") {
+            const enemies = window.myEnemies || [];
+            if (!enemies.includes(targetCountry)) {
+                alert(`攻撃不可: ${targetCountry} と戦争状態ではありません`);
+                return false;
+            }
+        }
+        return true;
     }
 
     function showInfo(id) {
@@ -496,22 +548,29 @@ function loadGameData() {
     function addOrder() {
         const mode = document.querySelector('input[name="missionMode"]:checked').value;
         const from = document.getElementById('fromInput').value;
-        if(!from) return alert("場所を選択してください");
+        const to = document.getElementById('toInput').value;
+        
+        if(!from || !to) return alert("場所(From/To)を選択してください");
 
-        if (mode === 'ATTACK') {
-            const to = document.getElementById('toInput').value;
-            const pow = parseInt(document.getElementById('attackPower').value);
-            if(!to || isNaN(pow) || pow<=0) return alert("無効な入力です");
-            
-            let type = "LAND";
-            if (!(adjacency[from]||[]).includes(to)) type = "SEA";
-            
-            orders.push({ type, mission:"攻撃", from, to, power:pow });
-        } else {
-            orders.push({ type:"LAND", mission:"撤退", from, to:from, power:0 });
-        }
+        // ★改善: 撤退命令もここで処理
+        const powerInput = document.getElementById('attackPower');
+        const pow = parseInt(powerInput.value);
+        
+        if(isNaN(pow) || pow<=0) return alert("兵力は1以上で入力してください");
+
+        let type = "LAND";
+        if (!(adjacency[from]||[]).includes(to)) type = "SEA"; // 海路判定
+
+        const missionName = (mode === 'ATTACK') ? "攻撃" : "撤退";
+
+        orders.push({ type, mission: missionName, from, to, power: pow });
+        
         renderOrders();
         updateMilitaryBudget();
+        
+        // 入力クリア
+        document.getElementById('fromInput').value = "";
+        document.getElementById('toInput').value = "";
     }
 
     function renderOrders() {
@@ -519,10 +578,13 @@ function loadGameData() {
         tb.innerHTML = '';
         orders.forEach((o, i) => {
             const tr = document.createElement('tr');
-            let label = o.type; 
-            if(o.mission==='撤退') label="撤退";
-            tr.innerHTML = `<td>${label}</td><td>${o.from}</td><td>${o.mission==='撤退'?'-':o.to}</td><td>${o.power||'-'}</td>
-                <td><button onclick="delOrder(${i})" style="color:red;border:none;cursor:pointer;">×</button></td>`;
+            // 色分け
+            const color = (o.mission==='攻撃') ? '#e74c3c' : '#3498db';
+            tr.innerHTML = `<td style="color:${color}; font-weight:bold;">${o.mission}</td>
+                            <td>${o.from}</td>
+                            <td>${o.to}</td>
+                            <td>${o.power}</td>
+                            <td><button onclick="delOrder(${i})" style="color:red;border:none;cursor:pointer;">×</button></td>`;
             tb.appendChild(tr);
         });
     }
@@ -532,16 +594,18 @@ function loadGameData() {
         const m = document.querySelector('input[name="missionMode"]:checked').value;
         document.getElementById('lblAttack').className = (m==='ATTACK'?'active-atk':'');
         document.getElementById('lblRetreat').className = (m==='RETREAT'?'active':'');
+        
         document.getElementById('fromInput').value = "";
         document.getElementById('toInput').value = "";
-        if(m==='ATTACK') {
-            document.getElementById('toInput').placeholder = "To (敵/海)";
-            document.getElementById('powerRow').style.display = 'flex';
-        } else {
-            document.getElementById('toInput').placeholder = "-(自国)-";
-            document.getElementById('powerRow').style.display = 'none';
-        }
+        
+        // ★改善: 撤退でも兵力入力と追加ボタンを表示する
+        document.getElementById('toInput').placeholder = (m==='ATTACK') ? "To (敵地)" : "To (後退先)";
+        document.getElementById('addOrderBtn').textContent = (m==='ATTACK') ? "攻撃命令追加" : "撤退命令追加";
+        
+        // どちらのモードでも兵力入力エリアは表示する
+        document.getElementById('powerRow').style.display = 'flex';
     }
+
     function setInputMode(m) {
         inputTargetMode = m;
         document.getElementById('fromInput').className = (m==='from'?'selecting':'');
@@ -555,14 +619,26 @@ function loadGameData() {
         let deployed = 0;
         mapData.forEach(r => { if(r[1]===currentPlayer) deployed += (parseInt(r[2])||0); });
 
-        // 2. 命令分
+        // 2. 命令分 (攻撃も撤退も兵力を使うと仮定。撤退は移動なので枠を食うかはルール次第ですが、一旦加算)
+        // ※ もし撤退は「移動」だから新規コストではないなら除外してください。ここでは「動かす兵力」としてカウントします。
         let ordered = 0;
-        orders.forEach(o => { if(o.mission==='攻撃') ordered += o.power; });
+        orders.forEach(o => { ordered += o.power; });
 
-        // 3. 新規駐屯
-        const gar = parseInt(document.getElementById('garrisonInput').value) || 0;
+        // 3. 駐屯兵(予備)の設定値
+        // ★改善: 駐屯兵は「入力した値そのもの」になるため、使用量としてはカウントせず、
+        // 「駐屯 + マップ + 命令」が総軍事力を超えていないかをチェックする形にします。
+        const garrisonVal = parseInt(document.getElementById('garrisonInput').value) || 0;
 
-        const totalUsed = deployed + ordered + gar;
+        // 計算ロジック:
+        // 現在の総軍事力使用量 = (マップ上の兵) + (命令で動かす兵?? ※ここはゲームルールによる) + (予備兵)
+        // ※ 通常、マップ上の兵を動かすだけならコスト増えませんが、
+        //   ここでは「軍事力上限 = 総兵力」と考え、
+        //   「マップ配置済み(deployed) + 予備兵(garrisonVal)」が Maxを超えないかチェックします。
+        
+        // 命令(ordered)は「マップ上の兵」を動かす場合と「予備から出す」場合がありますが、
+        // 簡易化のため、「既存配備 + 新しい予備設定」が上限を超えないか見ます。
+        
+        const totalUsed = deployed + garrisonVal; 
         
         document.getElementById('statMilitary').textContent = `${totalUsed.toLocaleString()} / ${max.toLocaleString()}`;
         
@@ -586,7 +662,8 @@ function loadGameData() {
         const btn = document.getElementById('sendBtn');
         if(btn.disabled) return;
         
-        if(orders.length===0 && document.getElementById('garrisonInput').value==0) return alert("命令なし");
+        const garrisonVal = document.getElementById('garrisonInput').value;
+        if(orders.length===0 && (!garrisonVal && garrisonVal!==0)) return alert("命令または駐屯兵の変更がありません");
 
         btn.disabled = true;
         btn.textContent = "送信中...";
@@ -595,7 +672,7 @@ function loadGameData() {
             method: 'POST',
             body: JSON.stringify({
                 country: currentPlayer,
-                garrison: document.getElementById('garrisonInput').value,
+                garrison: garrisonVal, // ★サーバーへ送信
                 attacks: orders
             })
         })
@@ -603,8 +680,9 @@ function loadGameData() {
         .then(data => {
             alert(data.message);
             orders = [];
+            document.getElementById('garrisonInput').value = ""; // 入力リセット
             renderOrders();
-            loadGameData(); // ステータス再取得
+            loadGameData();
         })
         .finally(() => {
             btn.disabled = false;
@@ -612,7 +690,6 @@ function loadGameData() {
         });
     }
 
-    // --- Utils ---
     function log(m) { 
         const u = document.getElementById('logList');
         const l = document.createElement('li'); l.textContent = m; u.prepend(l);
@@ -626,8 +703,3 @@ function loadGameData() {
     </script>
 </body>
 </html>
-
-
-
-
-
