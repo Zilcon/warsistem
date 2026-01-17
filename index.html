@@ -423,39 +423,140 @@
         }
     }
 
-    function handleMapClick(id) {
-        showInfo(id);
+// =========================================================
+    // ▼ ここから修正・追加箇所 ▼
+    // =========================================================
+
+    // 入力モードの切り替え（From入力中か、To入力中か）
+    function setInputMode(mode) {
+        inputTargetMode = mode;
         
-        if (inputTargetMode === 'from') {
-            const r = mapData.find(x => x[0] === id);
-            if (!r || r[1] !== currentPlayer) return alert("自国領土のみ選択可能です");
-            document.getElementById('fromInput').value = id;
-            setInputMode(null);
-            
-            // 撤退モードなら自動的に兵力0＆To無効化
-            const mode = document.querySelector('input[name="missionMode"]:checked').value;
-            if (mode === 'ATTACK') {
-                setInputMode('to'); 
-            } else {
-                // 撤退: Toは不要。兵力も0固定。
-                document.getElementById('toInput').value = "(放棄)";
-            }
-        } else if (inputTargetMode === 'to') {
-            const from = document.getElementById('fromInput').value;
-            if(!from) return alert("先にFromを選択");
+        const fromEl = document.getElementById('fromInput');
+        const toEl = document.getElementById('toInput');
 
-            // ★自国への攻撃禁止
-            const r = mapData.find(x => x[0] === id);
-            if (r && r[1] === currentPlayer) {
-                return alert("自国領土は攻撃できません");
-            }
-            
-            if (!checkAttackValid(from, id)) return;
+        // 一旦クラスを外す（ハイライト解除）
+        fromEl.classList.remove('selecting');
+        toEl.classList.remove('selecting');
 
-            document.getElementById('toInput').value = id;
-            setInputMode(null);
+        // 指定されたモードに合わせてハイライト
+        if (mode === 'from') {
+            fromEl.classList.add('selecting');
+            // From選択時はToをリセットしておくと自然です
+            toEl.value = ""; 
+        } else if (mode === 'to') {
+            toEl.classList.add('selecting');
         }
     }
+
+    // マップがクリックされたときの処理
+    function handleMapClick(id) {
+        showInfo(id); // 領土情報を表示
+        
+        // 入力モードが空(null)なら何もしない（単なる情報閲覧）
+        if (!inputTargetMode) return;
+
+        // --- From (出発地) の選択ロジック ---
+        if (inputTargetMode === 'from') {
+            const r = mapData.find(x => x[0] === id);
+            
+            // バリデーション: 自分の領土か？
+            if (!r || r[1] !== currentPlayer) {
+                alert("自国領土のみ選択可能です");
+                return;
+            }
+
+            document.getElementById('fromInput').value = id;
+
+            // モードによって次の挙動を変える
+            const missionMode = document.querySelector('input[name="missionMode"]:checked').value;
+
+            if (missionMode === 'ATTACK') {
+                // 攻撃モードなら、次は自動的に「To」の選択へ移る
+                setInputMode('to');
+            } else {
+                // 撤退モードなら、Toは不要なので完了する
+                document.getElementById('toInput').value = "(放棄)";
+                setInputMode(null); // 選択モード終了
+            }
+        } 
+        // --- To (目的地) の選択ロジック ---
+        else if (inputTargetMode === 'to') {
+            const fromVal = document.getElementById('fromInput').value;
+            
+            // Fromがまだ空なら、先にFromを選ばせる
+            if(!fromVal) {
+                alert("先にFrom(出発地)を選択してください");
+                setInputMode('from');
+                return;
+            }
+
+            // 自分自身への攻撃は不可
+            if (fromVal === id) return; 
+
+            // バリデーション: 隣接しているか？
+            if (!checkAttackValid(fromVal, id)) return;
+
+            // 成功
+            document.getElementById('toInput').value = id;
+            setInputMode(null); // 選択モード終了
+        }
+    }
+
+    // UI初期化（既存のinitUIの一部を確認・修正）
+    function initUI() {
+        // 入力欄をクリックしたときに「選択モード」に入る設定
+        document.getElementById('fromInput').onclick = function() {
+            setInputMode('from');
+        };
+
+        document.getElementById('toInput').onclick = function() {
+            // 撤退モード中はToをクリックしても反応させない
+            const mode = document.querySelector('input[name="missionMode"]:checked').value;
+            if(mode === 'ATTACK') {
+                setInputMode('to');
+            }
+        };
+
+        document.getElementById('addOrderBtn').onclick = addOrder;
+        document.getElementById('sendBtn').onclick = sendOrders;
+        
+        // --- 以下、既存のマップイベントリスナー登録 ---
+        const mapContainer = document.getElementById('map-container');
+        const handleClickLogic = (e, clientX, clientY) => {
+            const dist = Math.sqrt(Math.pow(clientX - touchStartX, 2) + Math.pow(clientY - touchStartY, 2));
+            if (dist > DRAG_THRESHOLD) return; 
+
+            const p = e.target.closest('path');
+            if(p) {
+                p.classList.remove('flashing'); void p.offsetWidth; p.classList.add('flashing'); 
+                setTimeout(() => p.classList.remove('flashing'), 1000);
+                
+                // スマホなら情報パネルを表示
+                if(window.innerWidth <= 768) {
+                    document.getElementById('infoBox').innerHTML = `<p style="text-align:center;">${p.id}<br>読込中...</p>`; 
+                }
+                handleMapClick(p.id);
+            }
+        };
+
+        mapContainer.addEventListener('mousedown', e => { touchStartX = e.clientX; touchStartY = e.clientY; });
+        mapContainer.addEventListener('click', e => { handleClickLogic(e, e.clientX, e.clientY); });
+        mapContainer.addEventListener('touchend', e => {
+            if(e.changedTouches.length > 0) {
+                const t = e.changedTouches[0];
+                handleClickLogic(e, t.clientX, t.clientY);
+            }
+        });
+
+        if (window.innerWidth > 768) {
+            makeDraggable(document.getElementById('sim-panel'), document.getElementById('sim-header'));
+            makeDraggable(document.getElementById('info-panel'), document.getElementById('info-header'));
+        }
+    }
+
+    // =========================================================
+    // ▲ 修正ここまで ▲
+    // =========================================================
 
     function switchMode() {
         const m = document.querySelector('input[name="missionMode"]:checked').value;
@@ -718,3 +819,4 @@
     </script>
 </body>
 </html>
+
