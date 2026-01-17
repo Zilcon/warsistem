@@ -586,6 +586,64 @@
         }
     }
 
+// =========================================================
+    // ▼ ここから修正・追加箇所 ▼
+    // =========================================================
+
+    // 重複チェック関数
+    function checkDuplicateOrder(mode, from, to) {
+        // モードを日本語のミッション名に変換
+        const targetMission = (mode === 'ATTACK') ? '攻撃' : '撤退';
+
+        // -------------------------------
+        // 1. クライアント側 (未送信) のチェック
+        // -------------------------------
+        const localDuplicate = orders.some(o => {
+            // ミッションが違うなら重複ではない
+            if (o.mission !== targetMission) return false;
+            
+            // Fromが違うなら重複ではない
+            if (o.from !== from) return false;
+
+            // 攻撃の場合、Toも一致しているかチェック
+            if (mode === 'ATTACK' && o.to !== to) return false;
+
+            // ここまで来たら重複
+            return true;
+        });
+
+        if (localDuplicate) return true;
+
+        // -------------------------------
+        // 2. サーバー側 (待機中) のチェック
+        // -------------------------------
+        // データ構造: [Time, Country, From, To, Power, Type, Mission]
+        const serverDuplicate = serverQueueData.some(row => {
+            const sCountry = row[1];
+            const sFrom = row[2];
+            const sTo = row[3];
+            const sMission = row[6];
+
+            // 自分の命令でなければ無視
+            if (sCountry !== currentPlayer) return false;
+
+            // ミッション不一致なら無視
+            if (sMission !== targetMission) return false;
+
+            // From不一致なら無視
+            if (sFrom !== from) return false;
+
+            // 攻撃の場合、To不一致なら無視
+            if (mode === 'ATTACK' && sTo !== to) return false;
+
+            // 重複あり
+            return true;
+        });
+
+        return serverDuplicate;
+    }
+
+    // 命令追加ロジック (既存関数を置き換え)
     function addOrder() {
         const mode = document.querySelector('input[name="missionMode"]:checked').value;
         const from = document.getElementById('fromInput').value;
@@ -596,6 +654,11 @@
             const to = document.getElementById('toInput').value;
             if(!to) return alert("Toを選択してください");
             
+            // ★重複チェック (攻撃: FromとToが同じ)
+            if (checkDuplicateOrder('ATTACK', from, to)) {
+                return alert("既に同じ攻撃命令が存在します（未送信または待機中）");
+            }
+
             const powerInput = document.getElementById('attackPower');
             const pow = parseInt(powerInput.value);
             if(isNaN(pow) || pow<=0) return alert("兵力は1以上で");
@@ -606,16 +669,35 @@
             orders.push({ type, mission: "攻撃", from, to, power: pow });
 
         } else {
+            // ★重複チェック (撤退: Fromが同じならTo関係なくNG)
+            // 撤退のToは便宜上Fromと同じにしているので第3引数にもfromを渡す(使われないが念のため)
+            if (checkDuplicateOrder('RETREAT', from, from)) {
+                return alert("この領土からの撤退命令は既に存在します");
+            }
+
             // 撤退: ToはFromと同じ(または空)、Powerは0
             orders.push({ type: "LAND", mission: "撤退", from, to: from, power: 0 });
         }
         
         renderOrders();
         updateMilitaryBudget();
+        
+        // 入力欄クリア
         document.getElementById('fromInput').value = "";
         document.getElementById('toInput').value = "";
-        if (mode === 'RETREAT') document.getElementById('toInput').value = "(不要)";
+        
+        // モードに合わせて初期表示を戻す
+        if (mode === 'RETREAT') {
+            document.getElementById('toInput').value = "(放棄)";
+        } else {
+            // 攻撃モードなら、連続入力しやすくするために兵力をリセットしない等の工夫も可
+            // ここでは空にする
+        }
     }
+
+    // =========================================================
+    // ▲ 修正ここまで ▲
+    // =========================================================
 
     function updateMilitaryBudget() {
         const max = parseInt(document.body.dataset.maxMilitary) || 0;
@@ -820,5 +902,6 @@
     </script>
 </body>
 </html>
+
 
 
