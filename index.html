@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>統合マップ・軍事シミュレータ v4.0 (スマホ最適化版)</title>
+    <title>統合マップ・軍事シミュレータ v5.0 (UI改善版)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
@@ -18,20 +18,18 @@
             touch-action: none; 
         }
 
-        /* --- アニメーション: 選択時に発光 --- */
+        /* 発光アニメーション */
         @keyframes flash-animation {
             0% { fill: #ffffff; stroke: #ffffff; stroke-width: 3px; fill-opacity: 1; }
             50% { fill: #ffff00; stroke: #ff0000; stroke-width: 2px; }
-            100% { stroke-width: inherit; fill-opacity: inherit; } /* 元に戻る */
+            100% { stroke-width: inherit; fill-opacity: inherit; }
         }
         .flashing {
             animation: flash-animation 1.0s ease-out;
-            /* 強制的に色を上書きするために !important を使用する場合あり */
-            fill: #ffffff !important; 
-            stroke: #ff0000 !important;
+            fill: #ffffff !important; stroke: #ff0000 !important;
         }
 
-        /* --- モーダル --- */
+        /* モーダル */
         #login-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.8); z-index: 9999;
@@ -42,9 +40,10 @@
             text-align: center; width: 85%; max-width: 300px;
         }
 
-        /* --- 上部タブ --- */
-        #top-controls {
-            position: absolute; top: 10px; left: 0; width: 100%;
+        /* --- タブコントロール (下部配置へ変更) --- */
+        #tab-controls {
+            position: absolute; 
+            left: 0; width: 100%;
             pointer-events: none; z-index: 50;
             display: flex; justify-content: center;
         }
@@ -65,11 +64,11 @@
         }
         .control-bar button.active { background: #2c3e50; color: #fff; border-color: #2c3e50; }
 
-        /* --- マップエリア --- */
+        /* マップエリア */
         #map-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
         #wrapper { width: 100%; height: 100%; cursor: grab; }
 
-        /* --- パネル共通 (PC/Mobile 切り替え) --- */
+        /* パネル共通 */
         .floating-panel {
             background-color: rgba(255, 255, 255, 0.98);
             border: 1px solid #ccc;
@@ -79,89 +78,50 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
         .panel-header {
-            padding: 10px; color: white; cursor: move;
+            padding: 8px 10px; color: white; cursor: move;
             font-weight: bold; font-size: 0.9em;
             display: flex; justify-content: space-between; align-items: center;
         }
-        .panel-content { 
-            padding: 10px; overflow-y: auto; 
-            -webkit-overflow-scrolling: touch;
-        }
+        .panel-content { padding: 10px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
         /* === PCレイアウト === */
         @media (min-width: 769px) {
+            #tab-controls { bottom: 20px; } /* PCは画面下端 */
             .floating-panel { position: absolute; border-radius: 8px; max-height: 80vh; transition: opacity 0.3s; }
-            #sim-panel { top: 70px; left: 20px; width: 380px; }
+            #sim-panel { top: 20px; left: 20px; width: 380px; }
             #sim-header { background-color: #2c3e50; }
-            #info-panel { top: 70px; right: 20px; width: 280px; }
+            #info-panel { top: 20px; right: 20px; width: 280px; }
             #info-header { background-color: #2980b9; }
-            .mobile-only { display: none; }
         }
 
-        /* === スマホレイアウト (下部ドッキング) === */
+        /* === スマホレイアウト === */
         @media (max-width: 768px) {
-            #top-controls { top: 5px; }
-            .control-bar { padding: 4px; }
-            .control-bar button { padding: 4px 8px; font-size: 0.7em; }
-
-            /* マップエリアの下部を空ける */
+            /* パネルの上(bottom:36vh)にタブを配置 */
+            #tab-controls { bottom: 36vh; } 
+            
             #map-container { height: 65%; bottom: 35%; top: 0; }
-
-            /* パネルを固定ドック化 */
             .floating-panel {
-                position: fixed !important;
-                bottom: 0 !important;
-                top: auto !important;
-                height: 35vh !important; /* 画面下35%を占有 */
-                max-height: 35vh !important;
-                border-radius: 0;
-                box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-                border: none; border-top: 1px solid #ccc;
+                position: fixed !important; bottom: 0 !important; top: auto !important;
+                height: 35vh !important; max-height: 35vh !important;
+                border-radius: 0; border: none; border-top: 1px solid #ccc;
             }
-
-            /* ヘッダーは邪魔なので隠す（または極小化） */
             .panel-header { display: none; }
-
-            /* 左側: 情報パネル (35%) */
-            #info-panel {
-                left: 0 !important;
-                width: 35% !important;
-                border-right: 1px solid #ddd;
-                z-index: 101;
-                background: #fdfdfd;
-            }
-            #infoBox { padding: 5px; font-size: 0.75em; }
-            #infoBox h3 { margin: 5px 0; font-size: 1.1em; color: #2980b9; }
-            #infoBox ul { padding-left: 15px; margin: 0; }
-
-            /* 右側: 命令パネル (65%) */
-            #sim-panel {
-                right: 0 !important;
-                left: 35% !important; /* 情報パネルの右 */
-                width: 65% !important;
-                z-index: 102;
-            }
-
-            /* UI要素の小型化 */
+            #info-panel { left: 0 !important; width: 35% !important; border-right: 1px solid #ddd; z-index: 101; background: #fdfdfd; }
+            #sim-panel { right: 0 !important; left: 35% !important; width: 65% !important; z-index: 102; }
+            
+            /* UI小型化 */
             .panel-content { padding: 5px; }
             label { margin: 2px 0; font-size: 0.7em; }
             input, select, .btn { padding: 4px; font-size: 0.8em; height: auto; }
             .row { gap: 4px; }
-            .status-grid { 
-                padding: 4px; margin-bottom: 5px; font-size: 0.7em; 
-                grid-template-columns: 1fr 1fr;
-            }
+            .status-grid { padding: 4px; margin-bottom: 5px; font-size: 0.7em; grid-template-columns: 1fr 1fr; }
             .mode-switch label { padding: 4px; font-size: 0.75em; }
-            
             #attackForm { margin-bottom: 5px; }
-            #logList { display: none; } /* スマホではログ非表示でスペース確保 */
             .diplomacy-box { margin-top: 5px; padding-top: 5px; font-size: 0.75em; }
-            
-            /* テーブル文字サイズ */
             th, td { padding: 2px; font-size: 0.7em; }
         }
 
-        /* --- UIパーツ --- */
+        /* 共通UIパーツ */
         label { display: block; margin: 8px 0 4px; font-size: 0.85em; font-weight: bold; color: #555; }
         input, select { padding: 8px; width: 100%; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
         .row { display: flex; gap: 10px; align-items: center; }
@@ -190,6 +150,9 @@
         .mode-switch label.active-atk { background: #d5f5e3; border: 1px solid #27ae60; color: #27ae60; font-weight: bold;}
 
         .war-tag { color: white; background: #c0392b; padding: 2px 5px; border-radius: 3px; font-size: 0.8em; margin-right: 5px; }
+        
+        /* サーバーキュー表示用 */
+        .queue-list { font-size: 0.75em; color: #555; background: #fffbe6; padding: 5px; border: 1px solid #f1c40f; margin-bottom: 5px; max-height: 60px; overflow-y: auto;}
     </style>
 </head>
 <body>
@@ -202,7 +165,7 @@
         </div>
     </div>
 
-    <div id="top-controls">
+    <div id="tab-controls">
         <div class="control-bar" id="tab-container"></div>
     </div>
 
@@ -234,9 +197,7 @@
     </div>
 
     <div id="info-panel" class="floating-panel">
-        <div id="info-header" class="panel-header">
-            <span>ℹ️ 領土情報</span>
-        </div>
+        <div id="info-header" class="panel-header"><span>ℹ️ 領土情報</span></div>
         <div id="infoBox" class="panel-content">
             <p style="color:#666; text-align:center;">MAP選択<br>で詳細</p>
         </div>
@@ -280,10 +241,12 @@
                 </div>
             </div>
 
+            <label style="margin-top:5px;">送信済み命令 (サーバー待機中)</label>
+            <div id="serverQueueList" class="queue-list">なし</div>
+
+            <label style="margin-top:5px;">新規命令 (未送信)</label>
             <div style="max-height: 80px; overflow-y: auto; border:1px solid #eee;">
-                <table id="orderTable">
-                    <tbody></tbody>
-                </table>
+                <table id="orderTable"><tbody></tbody></table>
             </div>
 
             <div style="margin-top:5px; border-top: 1px dashed #ccc; padding-top:5px;">
@@ -307,8 +270,6 @@
                     敵: <span id="warListDisplay">なし</span>
                 </div>
             </div>
-            
-            <ul id="logList"></ul>
         </div>
     </div>
 
@@ -322,15 +283,15 @@
     let adjacency = {};  
     let countryDataList = []; 
     let warData = [];
-    let orders = [];     
+    let serverQueueData = []; // ★サーバーから取得したキュー
+    let orders = [];     // クライアントで作成した新規オーダー
 
     let currentTab = "国"; 
     let inputTargetMode = null; 
     let panZoomInstance = null;
     
     // ドラッグ判定用
-    let touchStartX = 0;
-    let touchStartY = 0;
+    let touchStartX = 0; let touchStartY = 0;
     const DRAG_THRESHOLD = 10; 
 
     function handleLogin() {
@@ -363,6 +324,11 @@
                 warData = data.WarData.slice(1);
                 updateWarListUI();
             }
+            if (data.QueueData) {
+                // ヘッダー除外
+                serverQueueData = data.QueueData.slice(1);
+                renderServerQueue();
+            }
             updateMilitaryBudget();
         })
         .catch(err => console.error(err));
@@ -385,52 +351,301 @@
         }
     }
 
+    // --- サーバーキューの表示 ---
+    function renderServerQueue() {
+        const div = document.getElementById('serverQueueList');
+        // 自国の未処理オーダーのみ抽出
+        // データ構造: [Time, Country, From, To, Power, Type, Mission]
+        const myOrders = serverQueueData.filter(r => r[1] === currentPlayer);
+        
+        if (myOrders.length === 0) {
+            div.textContent = "なし";
+            return;
+        }
+
+        let html = '<ul style="padding-left:15px; margin:0;">';
+        myOrders.forEach(o => {
+            const mission = o[6];
+            const from = o[2];
+            const to = o[3];
+            const power = o[4];
+            // 撤退の場合はToを表示しない
+            const targetStr = (mission === '撤退') ? "(放棄)" : `➡ ${to}`;
+            const powerStr = (mission === '撤退') ? "" : `(兵${power})`;
+            html += `<li>${mission}: ${from} ${targetStr} ${powerStr}</li>`;
+        });
+        html += '</ul>';
+        div.innerHTML = html;
+    }
+
+    // --- マップ操作・クリック判定 ---
+    function initUI() {
+        document.getElementById('fromInput').onclick = () => setInputMode('from');
+        // 撤退時はToをクリックできないように制御
+        document.getElementById('toInput').onclick = () => {
+            const mode = document.querySelector('input[name="missionMode"]:checked').value;
+            if(mode === 'ATTACK') setInputMode('to');
+        };
+
+        document.getElementById('addOrderBtn').onclick = addOrder;
+        document.getElementById('sendBtn').onclick = sendOrders;
+        
+        const mapContainer = document.getElementById('map-container');
+        const handleClickLogic = (e, clientX, clientY) => {
+            const dist = Math.sqrt(Math.pow(clientX - touchStartX, 2) + Math.pow(clientY - touchStartY, 2));
+            if (dist > DRAG_THRESHOLD) return; 
+
+            const p = e.target.closest('path');
+            if(p) {
+                p.classList.remove('flashing'); void p.offsetWidth; p.classList.add('flashing'); 
+                setTimeout(() => p.classList.remove('flashing'), 1000);
+                
+                // スマホなら情報パネルを表示
+                if(window.innerWidth <= 768) {
+                    document.getElementById('infoBox').innerHTML = "ロード中..."; 
+                }
+                handleMapClick(p.id);
+            }
+        };
+
+        mapContainer.addEventListener('mousedown', e => { touchStartX = e.clientX; touchStartY = e.clientY; });
+        mapContainer.addEventListener('click', e => { handleClickLogic(e, e.clientX, e.clientY); });
+        mapContainer.addEventListener('touchend', e => {
+            if(e.changedTouches.length > 0) {
+                const t = e.changedTouches[0];
+                handleClickLogic(e, t.clientX, t.clientY);
+            }
+        });
+
+        if (window.innerWidth > 768) {
+            makeDraggable(document.getElementById('sim-panel'), document.getElementById('sim-header'));
+            makeDraggable(document.getElementById('info-panel'), document.getElementById('info-header'));
+        }
+    }
+
+    function handleMapClick(id) {
+        showInfo(id);
+        
+        if (inputTargetMode === 'from') {
+            const r = mapData.find(x => x[0] === id);
+            if (!r || r[1] !== currentPlayer) return alert("自国領土のみ選択可能です");
+            document.getElementById('fromInput').value = id;
+            setInputMode(null);
+            
+            // 撤退モードなら自動的に兵力0＆To無効化
+            const mode = document.querySelector('input[name="missionMode"]:checked').value;
+            if (mode === 'ATTACK') {
+                setInputMode('to'); 
+            } else {
+                // 撤退: Toは不要。兵力も0固定。
+                document.getElementById('toInput').value = "(放棄)";
+            }
+        } else if (inputTargetMode === 'to') {
+            const from = document.getElementById('fromInput').value;
+            if(!from) return alert("先にFromを選択");
+
+            // ★自国への攻撃禁止
+            const r = mapData.find(x => x[0] === id);
+            if (r && r[1] === currentPlayer) {
+                return alert("自国領土は攻撃できません");
+            }
+            
+            if (!checkAttackValid(from, id)) return;
+
+            document.getElementById('toInput').value = id;
+            setInputMode(null);
+        }
+    }
+
+    function switchMode() {
+        const m = document.querySelector('input[name="missionMode"]:checked').value;
+        document.getElementById('lblAttack').className = (m==='ATTACK'?'active-atk':'');
+        document.getElementById('lblRetreat').className = (m==='RETREAT'?'active':'');
+        
+        document.getElementById('fromInput').value = "";
+        document.getElementById('toInput').value = "";
+        
+        const powerInput = document.getElementById('attackPower');
+
+        if (m === 'RETREAT') {
+            // 撤退モード: To入力不可、兵力0固定
+            document.getElementById('toInput').placeholder = "-(不要)-";
+            document.getElementById('toInput').disabled = true;
+            powerInput.value = 0;
+            powerInput.disabled = true; 
+            document.getElementById('addOrderBtn').textContent = "撤退指示";
+        } else {
+            // 攻撃モード
+            document.getElementById('toInput').placeholder = "To";
+            document.getElementById('toInput').disabled = false;
+            powerInput.value = 100;
+            powerInput.disabled = false;
+            document.getElementById('addOrderBtn').textContent = "追加";
+        }
+    }
+
+    function addOrder() {
+        const mode = document.querySelector('input[name="missionMode"]:checked').value;
+        const from = document.getElementById('fromInput').value;
+        
+        if(!from) return alert("Fromを選択してください");
+
+        if (mode === 'ATTACK') {
+            const to = document.getElementById('toInput').value;
+            if(!to) return alert("Toを選択してください");
+            
+            const powerInput = document.getElementById('attackPower');
+            const pow = parseInt(powerInput.value);
+            if(isNaN(pow) || pow<=0) return alert("兵力は1以上で");
+
+            let type = "LAND";
+            if (!(adjacency[from]||[]).includes(to)) type = "SEA"; 
+
+            orders.push({ type, mission: "攻撃", from, to, power: pow });
+
+        } else {
+            // 撤退: ToはFromと同じ(または空)、Powerは0
+            orders.push({ type: "LAND", mission: "撤退", from, to: from, power: 0 });
+        }
+        
+        renderOrders();
+        updateMilitaryBudget();
+        document.getElementById('fromInput').value = "";
+        document.getElementById('toInput').value = "";
+        if (mode === 'RETREAT') document.getElementById('toInput').value = "(不要)";
+    }
+
+    function updateMilitaryBudget() {
+        const max = parseInt(document.body.dataset.maxMilitary) || 0;
+        let deployed = 0;
+        mapData.forEach(r => { if(r[1]===currentPlayer) deployed += (parseInt(r[2])||0); });
+        
+        // ★軍事力計算に「サーバーキュー」と「ローカルキュー」の両方を含める
+        let pending = 0;
+        
+        // 1. ローカルの新規命令 (攻撃のみ兵力消費)
+        orders.forEach(o => { if(o.mission==='攻撃') pending += o.power; });
+        
+        // 2. サーバー上の未処理命令
+        serverQueueData.forEach(r => {
+            if (r[1] === currentPlayer && r[6] === '攻撃') {
+                 pending += (parseInt(r[4]) || 0);
+            }
+        });
+
+        const garrisonVal = parseInt(document.getElementById('garrisonInput').value) || 0;
+        const totalUsed = deployed + pending + garrisonVal; 
+        
+        document.getElementById('statMilitary').textContent = `${totalUsed.toLocaleString()} / ${max.toLocaleString()}`;
+        const btn = document.getElementById('sendBtn');
+        const alertBox = document.getElementById('militaryAlert');
+        
+        if (totalUsed > max) {
+            document.getElementById('statMilitary').style.color = "red";
+            alertBox.style.display = "block";
+            btn.disabled = true;
+        } else {
+            document.getElementById('statMilitary').style.color = "#2c3e50";
+            alertBox.style.display = "none";
+            btn.disabled = false;
+        }
+    }
+
+    // --- その他ヘルパー関数 (省略部は前回と同じ) ---
+    function checkAdjacency(from, to) {
+        const fAdj = adjacency[from]||[];
+        const tAdj = adjacency[to]||[];
+        return fAdj.includes(to) || (fAdj.includes('海') && tAdj.includes('海'));
+    }
+    function checkAttackValid(from, to) {
+        if (!checkAdjacency(from, to)) { alert("隣接なし/海路なし"); return false; }
+        const r = mapData.find(x => x[0] === to);
+        const targetCountry = r ? r[1] : null;
+        if (targetCountry && targetCountry !== currentPlayer && targetCountry !== "中立" && targetCountry !== "") {
+            const enemies = window.myEnemies || [];
+            if (!enemies.includes(targetCountry)) { alert("宣戦布告が必要です"); return false; }
+        }
+        return true;
+    }
+    function renderOrders() {
+        const tb = document.querySelector('#orderTable tbody');
+        tb.innerHTML = '';
+        orders.forEach((o, i) => {
+            const tr = document.createElement('tr');
+            const color = (o.mission==='攻撃') ? '#e74c3c' : '#3498db';
+            const powStr = (o.mission==='攻撃') ? o.power : "-";
+            const toStr = (o.mission==='攻撃') ? o.to : "-";
+            tr.innerHTML = `<td style="color:${color}; font-weight:bold;">${o.mission.charAt(0)}</td>
+                            <td>${o.from}</td>
+                            <td>${toStr}</td>
+                            <td>${powStr}</td>
+                            <td><button onclick="delOrder(${i})" style="color:red;border:none;">×</button></td>`;
+            tb.appendChild(tr);
+        });
+    }
+    window.delOrder = (i) => { orders.splice(i,1); renderOrders(); updateMilitaryBudget(); };
+
+    function sendOrders() {
+        const btn = document.getElementById('sendBtn');
+        if(btn.disabled) return;
+        const garrisonVal = document.getElementById('garrisonInput').value;
+        if(orders.length===0 && (!garrisonVal && garrisonVal!==0)) return alert("命令なし");
+
+        btn.disabled = true; btn.textContent = "...";
+        fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({ country: currentPlayer, garrison: garrisonVal, attacks: orders })
+        })
+        .then(res => res.json())
+        .then(data => {
+            alert(data.message);
+            orders = [];
+            document.getElementById('garrisonInput').value = ""; 
+            renderOrders(); loadGameData();
+        })
+        .finally(() => { btn.disabled = false; btn.textContent = "送信"; });
+    }
+
+    // 情報表示
+    function showInfo(id) {
+        const r = mapData.find(x => x[0] === id);
+        const b = document.getElementById('infoBox');
+        if(r) {
+            let h = `<h3>${id}</h3><ul>`;
+            mapHeaders.forEach((hd, i) => {
+                if(!['Color','ID'].includes(hd)) h += `<li><strong>${hd}:</strong> ${r[i]}</li>`;
+            });
+            b.innerHTML = h + "</ul>";
+        }
+    }
+    
+    // 宣戦布告
     function setupDiplomacyUI() {
         const sel = document.getElementById('targetCountrySelect');
         sel.innerHTML = '<option value="">国選択</option>';
-        countryDataList.forEach(row => {
-            const cName = row[0];
-            if (cName !== currentPlayer) {
-                const opt = document.createElement('option');
-                opt.value = cName;
-                opt.textContent = cName;
-                sel.appendChild(opt);
-            }
-        });
+        countryDataList.forEach(row => { if (row[0] !== currentPlayer) {
+            const opt = document.createElement('option'); opt.value = row[0]; opt.textContent = row[0]; sel.appendChild(opt);
+        }});
     }
-
     function updateWarListUI() {
         const enemies = [];
         warData.forEach(row => {
             if (row[0] === currentPlayer) enemies.push(row[1]);
             if (row[1] === currentPlayer) enemies.push(row[0]);
         });
-        const uniqueEnemies = [...new Set(enemies)];
-        const disp = document.getElementById('warListDisplay');
-        if (uniqueEnemies.length === 0) {
-            disp.textContent = "なし";
-        } else {
-            disp.innerHTML = uniqueEnemies.map(e => `<span class="war-tag">${e}</span>`).join(" ");
-        }
-        window.myEnemies = uniqueEnemies;
+        const u = [...new Set(enemies)];
+        const d = document.getElementById('warListDisplay');
+        d.innerHTML = (u.length===0) ? "なし" : u.map(e => `<span class="war-tag">${e}</span>`).join(" ");
+        window.myEnemies = u;
     }
-
     function declareWar() {
-        const target = document.getElementById('targetCountrySelect').value;
-        if (!target) return;
-        if (!confirm(`${target} に宣戦布告しますか？`)) return;
-
-        fetch(API_URL, {
-            method: 'POST',
-            body: JSON.stringify({ action: "DECLARE_WAR", declarer: currentPlayer, target: target })
-        })
-        .then(res => res.json())
-        .then(data => {
-            alert(data.message);
-            if (data.status === 'success') loadGameData();
-        });
+        const t = document.getElementById('targetCountrySelect').value;
+        if (!t || !confirm(`${t} に宣戦布告しますか？`)) return;
+        fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "DECLARE_WAR", declarer: currentPlayer, target: t }) })
+        .then(res => res.json()).then(d => { alert(d.message); if(d.status==='success') loadGameData(); });
     }
 
+    // 描画
     function setupTabs() {
         const c = document.getElementById('tab-container');
         c.innerHTML = '';
@@ -448,307 +663,57 @@
             c.appendChild(b);
         });
     }
-
     function renderMap() {
         const paths = document.querySelectorAll('path');
         const colIdx = mapHeaders.indexOf(currentTab);
         const clrIdx = mapHeaders.indexOf('Color');
-        const terrainColors = { '1': '#aed6f1', '2': '#a9dfbf', '3': '#f9e79f', '4': '#e59866' };
-
+        const tColors = { '1': '#aed6f1', '2': '#a9dfbf', '3': '#f9e79f', '4': '#e59866' };
         paths.forEach(p => {
             const r = mapData.find(x => String(x[0]).trim() === p.id.trim());
             if (r) {
                 let fill = '#eee';
-                let strokeColor = '#000';
-                
-                if (currentTab === '地形(1-4)') {
-                    const val = String(r[colIdx]);
-                    fill = terrainColors[val] || '#bdc3c7';
-                } else if (currentTab === '首都プラグ') {
-                    fill = (String(r[colIdx]) === 'TRUE') ? '#f1c40f' : '#ecf0f1';
-                } else if (['国','所有国'].includes(currentTab)) {
-                    fill = (clrIdx > -1 ? r[clrIdx] : '#ccc');
-                } else {
-                    let v = parseFloat(r[colIdx]);
-                    if(isNaN(v)) v=0;
+                if (currentTab === '地形(1-4)') fill = tColors[String(r[colIdx])] || '#ccc';
+                else if (currentTab === '首都プラグ') fill = (String(r[colIdx])==='TRUE') ? '#f1c40f' : '#ecf0f1';
+                else if (['国','所有国'].includes(currentTab)) fill = (clrIdx>-1 ? r[clrIdx] : '#ccc');
+                else {
+                    let v = parseFloat(r[colIdx])||0;
                     fill = `rgb(255, ${Math.floor(255-(v*2.55))}, ${Math.floor(255-(v*2.55))})`;
                 }
-
-                if (currentTab !== '所有国' && currentTab !== '国') {
-                     if (clrIdx > -1 && r[clrIdx]) strokeColor = r[clrIdx];
-                } else {
-                    if (r[1] === currentPlayer) strokeColor = "#f1c40f"; 
-                }
+                
+                let stroke = '#000';
+                if (currentTab !== '所有国' && currentTab !== '国' && clrIdx > -1) stroke = r[clrIdx];
+                if (r[1] === currentPlayer) stroke = "#f1c40f";
 
                 p.style.fill = fill;
-                p.style.stroke = strokeColor;
-                p.style.strokeWidth = (r[1] === currentPlayer) ? "1.5px" : "0.5px";
-                if (r[1] === currentPlayer) p.parentNode.appendChild(p); 
+                p.style.stroke = stroke;
+                p.style.strokeWidth = (r[1]===currentPlayer) ? "1.5px" : "0.5px";
+                if (r[1] === currentPlayer) p.parentNode.appendChild(p);
             }
         });
-        
-        const svgElement = document.querySelector('#wrapper');
-        if(svgElement && !panZoomInstance) {
+        const svg = document.querySelector('#wrapper');
+        if(svg && !panZoomInstance) {
             const eventsHandler = {
                 haltEventListeners: ['touchstart', 'touchend', 'touchmove', 'leave', 'touchcancel', 'gesturestart', 'gesturechange', 'gestureend'],
-                init: function(options) {
-                    var instance = options.instance, initialScale = 1, pannedX = 0, pannedY = 0;
-                    this.hammer = Hammer(options.svgElement, { inputClass: Hammer.SUPPORT_POINTER_EVENTS ? Hammer.PointerEventInput : Hammer.TouchInput });
-                    this.hammer.get('pinch').set({ enable: true });
-                    this.hammer.on('doubletap', function(ev){ instance.zoomIn(); });
-                    this.hammer.on('panstart panmove', function(ev){
-                        if(ev.type === 'panstart'){ pannedX = 0; pannedY = 0; }
-                        instance.panBy({x: ev.deltaX - pannedX, y: ev.deltaY - pannedY});
-                        pannedX = ev.deltaX; pannedY = ev.deltaY;
-                    });
-                    this.hammer.on('pinchstart pinchmove', function(ev){
-                        if(ev.type === 'pinchstart'){ initialScale = instance.getZoom(); instance.zoomAtPoint(initialScale * ev.scale, {x: ev.center.x, y: ev.center.y}); }
-                        instance.zoomAtPoint(initialScale * ev.scale, {x: ev.center.x, y: ev.center.y});
-                    });
-                    options.svgElement.addEventListener('touchstart', function(e){ 
-                        touchStartX = e.touches[0].clientX;
-                        touchStartY = e.touches[0].clientY;
-                    }, {passive: false});
+                init: function(o) {
+                    var i = o.instance, s = 1, px = 0, py = 0;
+                    this.h = Hammer(o.svgElement, { inputClass: Hammer.SUPPORT_POINTER_EVENTS ? Hammer.PointerEventInput : Hammer.TouchInput });
+                    this.h.get('pinch').set({ enable: true });
+                    this.h.on('doubletap', ()=> i.zoomIn());
+                    this.h.on('panstart panmove', e=>{ if(e.type==='panstart'){px=0;py=0;} i.panBy({x:e.deltaX-px, y:e.deltaY-py}); px=e.deltaX; py=e.deltaY; });
+                    this.h.on('pinchstart pinchmove', e=>{ if(e.type==='pinchstart'){s=i.getZoom(); i.zoomAtPoint(s*e.scale, {x:e.center.x, y:e.center.y});} i.zoomAtPoint(s*e.scale, {x:e.center.x, y:e.center.y}); });
+                    o.svgElement.addEventListener('touchstart', e=>{ touchStartX=e.touches[0].clientX; touchStartY=e.touches[0].clientY; }, {passive:false});
                 },
-                destroy: function(){ this.hammer.destroy(); }
+                destroy: function(){ this.h.destroy(); }
             };
-
-            panZoomInstance = svgPanZoom(svgElement, {
-                zoomEnabled: true,
-                controlIconsEnabled: false,
-                fit: true,
-                center: true,
-                minZoom: 0.5,
-                maxZoom: 50, // ★ズーム倍率を50倍までアップ
-                customEventsHandler: eventsHandler
-            });
+            panZoomInstance = svgPanZoom(svg, { zoomEnabled:true, controlIconsEnabled:false, fit:true, center:true, minZoom:0.5, maxZoom:50, customEventsHandler: eventsHandler });
         }
     }
-
-    function initUI() {
-        document.getElementById('fromInput').onclick = () => setInputMode('from');
-        document.getElementById('toInput').onclick = () => setInputMode('to');
-        document.getElementById('addOrderBtn').onclick = addOrder;
-        document.getElementById('sendBtn').onclick = sendOrders;
-        
-        const mapContainer = document.getElementById('map-container');
-        const handleClickLogic = (e, clientX, clientY) => {
-            const dist = Math.sqrt(Math.pow(clientX - touchStartX, 2) + Math.pow(clientY - touchStartY, 2));
-            if (dist > DRAG_THRESHOLD) return; 
-
-            const p = e.target.closest('path');
-            if(p) {
-                // ★クリック時の発光エフェクト処理
-                p.classList.remove('flashing'); // クラスを一旦消して
-                void p.offsetWidth; // リフローさせて
-                p.classList.add('flashing'); // 再付与
-                
-                // 1秒後にクラスを消す（もしアニメーションが終わってもクラスが残ると色が上書きされたままになるため）
-                setTimeout(() => {
-                    p.classList.remove('flashing');
-                }, 1000);
-
-                handleMapClick(p.id);
-            }
-        };
-
-        mapContainer.addEventListener('mousedown', e => { touchStartX = e.clientX; touchStartY = e.clientY; });
-        mapContainer.addEventListener('click', e => { handleClickLogic(e, e.clientX, e.clientY); });
-        mapContainer.addEventListener('touchend', e => {
-            if(e.changedTouches.length > 0) {
-                const t = e.changedTouches[0];
-                handleClickLogic(e, t.clientX, t.clientY);
-            }
-        });
-
-        // PCのみドラッグ可能にする
-        if (window.innerWidth > 768) {
-            makeDraggable(document.getElementById('sim-panel'), document.getElementById('sim-header'));
-            makeDraggable(document.getElementById('info-panel'), document.getElementById('info-header'));
-        }
-    }
-
-    function handleMapClick(id) {
-        showInfo(id);
-        if (inputTargetMode === 'from') {
-            const r = mapData.find(x => x[0] === id);
-            if (!r || r[1] !== currentPlayer) return alert("自国領土のみ選択可能です");
-            document.getElementById('fromInput').value = id;
-            setInputMode(null);
-            const mode = document.querySelector('input[name="missionMode"]:checked').value;
-            setInputMode('to'); 
-        } else if (inputTargetMode === 'to') {
-            const from = document.getElementById('fromInput').value;
-            if(!from) return alert("先にFromを選択");
-
-            const mode = document.querySelector('input[name="missionMode"]:checked').value;
-            if (mode === 'RETREAT') {
-                const r = mapData.find(x => x[0] === id);
-                if (r && r[1] !== currentPlayer) return alert("撤退先は自国のみ");
-            }
-            if (mode === 'ATTACK') {
-                if (!checkAttackValid(from, id)) return;
-            } else {
-                if (!checkAdjacency(from, id)) return alert("隣接地にのみ撤退可能");
-            }
-
-            document.getElementById('toInput').value = id;
-            setInputMode(null);
-        }
-    }
-
-    function checkAdjacency(from, to) {
-        const fAdj = adjacency[from]||[];
-        const tAdj = adjacency[to]||[];
-        return fAdj.includes(to) || (fAdj.includes('海') && tAdj.includes('海'));
-    }
-
-    function checkAttackValid(from, to) {
-        if (!checkAdjacency(from, to)) {
-            alert("隣接していないか海路がありません");
-            return false;
-        }
-        const r = mapData.find(x => x[0] === to);
-        const targetCountry = r ? r[1] : null;
-        if (targetCountry && targetCountry !== currentPlayer && targetCountry !== "中立" && targetCountry !== "") {
-            const enemies = window.myEnemies || [];
-            if (!enemies.includes(targetCountry)) {
-                alert(`攻撃不可: ${targetCountry} と戦争状態ではありません`);
-                return false;
-            }
-        }
-        return true;
-    }
-
-    function showInfo(id) {
-        const r = mapData.find(x => x[0] === id);
-        const b = document.getElementById('infoBox');
-        if(r) {
-            let h = `<h3>${id}</h3><ul>`;
-            mapHeaders.forEach((hd, i) => {
-                if(!['Color','ID'].includes(hd)) h += `<li><strong>${hd}:</strong> ${r[i]}</li>`;
-            });
-            b.innerHTML = h + "</ul>";
-        }
-    }
-
-    function addOrder() {
-        const mode = document.querySelector('input[name="missionMode"]:checked').value;
-        const from = document.getElementById('fromInput').value;
-        const to = document.getElementById('toInput').value;
-        if(!from || !to) return alert("場所を選択してください");
-
-        const powerInput = document.getElementById('attackPower');
-        const pow = parseInt(powerInput.value);
-        if(isNaN(pow) || pow<=0) return alert("兵力は1以上で");
-
-        let type = "LAND";
-        if (!(adjacency[from]||[]).includes(to)) type = "SEA"; 
-
-        const missionName = (mode === 'ATTACK') ? "攻撃" : "撤退";
-        orders.push({ type, mission: missionName, from, to, power: pow });
-        
-        renderOrders();
-        updateMilitaryBudget();
-        document.getElementById('fromInput').value = "";
-        document.getElementById('toInput').value = "";
-    }
-
-    function renderOrders() {
-        const tb = document.querySelector('#orderTable tbody');
-        tb.innerHTML = '';
-        orders.forEach((o, i) => {
-            const tr = document.createElement('tr');
-            const color = (o.mission==='攻撃') ? '#e74c3c' : '#3498db';
-            tr.innerHTML = `<td style="color:${color}; font-weight:bold;">${o.mission.charAt(0)}</td>
-                            <td>${o.from}</td>
-                            <td>${o.to}</td>
-                            <td>${o.power}</td>
-                            <td><button onclick="delOrder(${i})" style="color:red;border:none;">×</button></td>`;
-            tb.appendChild(tr);
-        });
-    }
-    window.delOrder = (i) => { orders.splice(i,1); renderOrders(); updateMilitaryBudget(); };
-
-    function switchMode() {
-        const m = document.querySelector('input[name="missionMode"]:checked').value;
-        document.getElementById('lblAttack').className = (m==='ATTACK'?'active-atk':'');
-        document.getElementById('lblRetreat').className = (m==='RETREAT'?'active':'');
-        document.getElementById('addOrderBtn').textContent = (m==='ATTACK') ? "追加" : "追加";
-    }
-
-    function setInputMode(m) {
-        inputTargetMode = m;
-        document.getElementById('fromInput').className = (m==='from'?'selecting':'');
-        document.getElementById('toInput').className = (m==='to'?'selecting':'');
-    }
-
-    function updateMilitaryBudget() {
-        const max = parseInt(document.body.dataset.maxMilitary) || 0;
-        let deployed = 0;
-        mapData.forEach(r => { if(r[1]===currentPlayer) deployed += (parseInt(r[2])||0); });
-        const garrisonVal = parseInt(document.getElementById('garrisonInput').value) || 0;
-        const totalUsed = deployed + garrisonVal; 
-        
-        document.getElementById('statMilitary').textContent = `${totalUsed} / ${max}`;
-        const btn = document.getElementById('sendBtn');
-        const alertBox = document.getElementById('militaryAlert');
-        
-        if (totalUsed > max) {
-            document.getElementById('statMilitary').style.color = "red";
-            alertBox.style.display = "block";
-            btn.disabled = true;
-        } else {
-            document.getElementById('statMilitary').style.color = "#2c3e50";
-            alertBox.style.display = "none";
-            btn.disabled = false;
-        }
-    }
-
-    function sendOrders() {
-        const btn = document.getElementById('sendBtn');
-        if(btn.disabled) return;
-        const garrisonVal = document.getElementById('garrisonInput').value;
-        if(orders.length===0 && (!garrisonVal && garrisonVal!==0)) return alert("命令なし");
-
-        btn.disabled = true;
-        btn.textContent = "...";
-
-        fetch(API_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-                country: currentPlayer,
-                garrison: garrisonVal, 
-                attacks: orders
-            })
-        })
-        .then(res => res.json())
-        .then(data => {
-            alert(data.message);
-            orders = [];
-            document.getElementById('garrisonInput').value = ""; 
-            renderOrders();
-            loadGameData();
-        })
-        .finally(() => {
-            btn.disabled = false;
-            btn.textContent = "送信";
-        });
-    }
-
     function makeDraggable(el, h) {
-        let dragging=false, sx, sy, il, it;
-        h.addEventListener('mousedown', start);
-        document.addEventListener('mousemove', move);
-        document.addEventListener('mouseup', end);
-        function start(e) {
-            dragging=true; sx=e.clientX; sy=e.clientY; 
-            const r=el.getBoundingClientRect(); il=r.left; it=r.top; 
-        }
-        function move(e) {
-            if(dragging) { el.style.left=(il+e.clientX-sx)+'px'; el.style.top=(it+e.clientY-sy)+'px'; }
-        }
-        function end() { dragging=false; }
+        let d=false, sx, sy, il, it;
+        h.addEventListener('mousedown', s); document.addEventListener('mousemove', m); document.addEventListener('mouseup', e);
+        function s(ev){ d=true; sx=ev.clientX; sy=ev.clientY; const r=el.getBoundingClientRect(); il=r.left; it=r.top; }
+        function m(ev){ if(d) { el.style.left=(il+ev.clientX-sx)+'px'; el.style.top=(it+ev.clientY-sy)+'px'; } }
+        function e(){ d=false; }
     }
     </script>
 </body>
