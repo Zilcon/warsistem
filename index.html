@@ -449,10 +449,11 @@
     }
 
     // マップがクリックされたときの処理
+// マップがクリックされたときの処理
     function handleMapClick(id) {
         showInfo(id); // 領土情報を表示
         
-        // 入力モードが空(null)なら何もしない（単なる情報閲覧）
+        // 入力モードが空なら何もしない
         if (!inputTargetMode) return;
 
         // --- From (出発地) の選択ロジック ---
@@ -469,29 +470,29 @@
 
             // モードによって次の挙動を変える
             const missionMode = document.querySelector('input[name="missionMode"]:checked').value;
-
             if (missionMode === 'ATTACK') {
-                // 攻撃モードなら、次は自動的に「To」の選択へ移る
-                setInputMode('to');
+                setInputMode('to'); // 攻撃なら次はTo
             } else {
-                // 撤退モードなら、Toは不要なので完了する
                 document.getElementById('toInput').value = "(放棄)";
-                setInputMode(null); // 選択モード終了
+                setInputMode(null); // 撤退ならここで終了
             }
         } 
         // --- To (目的地) の選択ロジック ---
         else if (inputTargetMode === 'to') {
             const fromVal = document.getElementById('fromInput').value;
             
-            // Fromがまだ空なら、先にFromを選ばせる
             if(!fromVal) {
                 alert("先にFrom(出発地)を選択してください");
                 setInputMode('from');
                 return;
             }
 
-            // 自分自身への攻撃は不可
-            if (fromVal === id) return; 
+            // 【追加修正】: 攻撃先が「自国の領土」なら禁止する
+            const r = mapData.find(x => x[0] === id);
+            if (r && r[1] === currentPlayer) {
+                alert("自国領土は攻撃できません");
+                return;
+            }
 
             // バリデーション: 隣接しているか？
             if (!checkAttackValid(fromVal, id)) return;
@@ -819,4 +820,5 @@
     </script>
 </body>
 </html>
+
 
