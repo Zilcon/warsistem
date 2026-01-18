@@ -261,6 +261,12 @@
                 <div id="militaryAlert" style="color:red; font-size:0.7em; display:none;">⚠️ 上限超過</div>
             </div>
 
+            <div id="militaryUpdateArea" style="margin-top:10px; display:none; border-top:1px solid #ccc; padding-top:5px;">
+                <label style="color:#d35400;">⚠️ 軍事力変更 (未保存)</label>
+                <button id="btnUpdateMilitary" class="btn" style="background-color:#e67e22; color:white;">変更を一括更新</button>
+                <button id="btnClearMilitary" class="btn" style="background-color:#95a5a6; color:white; margin-top:2px;">クリア</button>
+            </div>
+
             <div class="diplomacy-box">
                 <div class="row">
                     <select id="targetCountrySelect" style="padding:2px;"><option>国選択</option></select>
@@ -285,6 +291,12 @@
     let warData = [];
     let serverQueueData = []; // ★サーバーから取得したキュー
     let orders = [];     // クライアントで作成した新規オーダー
+    // --- 既存の変数 ---
+    // ... (既存の変数はそのまま) ...
+    
+    // ★ 追加: 軍事力編集用
+    let pendingGarrisons = {}; // { 領土ID: 新しい値 }
+    let isClickLocked = false; // クリックロックフラグ
 
     let currentTab = "国"; 
     let inputTargetMode = null; 
@@ -450,56 +462,93 @@
 
     // マップがクリックされたときの処理
 // マップがクリックされたときの処理
+// マップがクリックされたときの処理
     function handleMapClick(id) {
-        showInfo(id); // 領土情報を表示
+        // ★ クリックロック中は処理しない
+        if (isClickLocked) return;
+
+        showInfo(id);
+
+        const r = mapData.find(x => x[0] === id);
         
-        // 入力モードが空なら何もしない
+        // --- 1. 軍事力編集モード (タブ名が「軍事力」かつ自国領の場合) ---
+        if (currentTab === '軍事力' && r && r[1] === currentPlayer) {
+            const currentVal = pendingGarrisons[id] !== undefined 
+                               ? pendingGarrisons[id] 
+                               : (parseInt(r[mapHeaders.indexOf('軍事力')]) || 0);
+            
+            const inputVal = prompt(`${id} の軍事力を設定 (現在: ${currentVal})`, currentVal);
+            
+            if (inputVal !== null) {
+                const newVal = parseInt(inputVal);
+                if (!isNaN(newVal) && newVal >= 0) {
+                    pendingGarrisons[id] = newVal;
+                    // 見た目を即時反映 (再描画)
+                    renderMap();
+                    // 一括更新ボタンを表示させるなどのUI更新があればここで
+                    updateUpdateBtnState(); 
+                } else {
+                    alert("0以上の数値を入力してください");
+                }
+            }
+            return; // 編集モードの場合はここで終了
+        }
+
+        // --- 既存の攻撃/撤退ロジック ---
         if (!inputTargetMode) return;
 
-        // --- From (出発地) の選択ロジック ---
+        // ... (From選択ロジックは変更なし) ...
         if (inputTargetMode === 'from') {
-            const r = mapData.find(x => x[0] === id);
-            
-            // バリデーション: 自分の領土か？
-            if (!r || r[1] !== currentPlayer) {
-                alert("自国領土のみ選択可能です");
-                return;
-            }
-
-            document.getElementById('fromInput').value = id;
-
-            // モードによって次の挙動を変える
-            const missionMode = document.querySelector('input[name="missionMode"]:checked').value;
-            if (missionMode === 'ATTACK') {
-                setInputMode('to'); // 攻撃なら次はTo
-            } else {
-                document.getElementById('toInput').value = "(放棄)";
-                setInputMode(null); // 撤退ならここで終了
-            }
+             const r = mapData.find(x => x[0] === id);
+             if (!r || r[1] !== currentPlayer) {
+                 alert("自国領土のみ選択可能です");
+                 return;
+             }
+             document.getElementById('fromInput').value = id;
+ 
+             const missionMode = document.querySelector('input[name="missionMode"]:checked').value;
+             if (missionMode === 'ATTACK') {
+                 setInputMode('to');
+             } else {
+                 document.getElementById('toInput').value = "(放棄)";
+                 setInputMode(null);
+             }
         } 
-        // --- To (目的地) の選択ロジック ---
+        // ... (To選択ロジックにロックを追加) ...
         else if (inputTargetMode === 'to') {
             const fromVal = document.getElementById('fromInput').value;
-            
             if(!fromVal) {
                 alert("先にFrom(出発地)を選択してください");
                 setInputMode('from');
                 return;
             }
-
-            // 【追加修正】: 攻撃先が「自国の領土」なら禁止する
-            const r = mapData.find(x => x[0] === id);
+            
+            // 自国領土への攻撃禁止
             if (r && r[1] === currentPlayer) {
                 alert("自国領土は攻撃できません");
                 return;
             }
 
-            // バリデーション: 隣接しているか？
             if (!checkAttackValid(fromVal, id)) return;
 
-            // 成功
             document.getElementById('toInput').value = id;
-            setInputMode(null); // 選択モード終了
+            setInputMode(null);
+
+            // ★ 選択完了後、一時的にクリックをロックする (0.5秒)
+            isClickLocked = true;
+            setTimeout(() => {
+                isClickLocked = false;
+            }, 500);
+        }
+    }
+
+    // ボタンの状態更新
+    function updateUpdateBtnState() {
+        const area = document.getElementById('militaryUpdateArea');
+        if (Object.keys(pendingGarrisons).length > 0) {
+            area.style.display = 'block';
+        } else {
+            area.style.display = 'none';
         }
     }
 
@@ -553,6 +602,13 @@
             makeDraggable(document.getElementById('sim-panel'), document.getElementById('sim-header'));
             makeDraggable(document.getElementById('info-panel'), document.getElementById('info-header'));
         }
+        // ★ 追加: 軍事力更新ボタンのイベント
+        document.getElementById('btnUpdateMilitary').onclick = sendMilitaryUpdates;
+        document.getElementById('btnClearMilitary').onclick = () => {
+            pendingGarrisons = {};
+            renderMap();
+            updateUpdateBtnState();
+        };
     }
 
     // =========================================================
@@ -847,21 +903,36 @@
             c.appendChild(b);
         });
     }
-    function renderMap() {
+function renderMap() {
         const paths = document.querySelectorAll('path');
         const colIdx = mapHeaders.indexOf(currentTab);
         const clrIdx = mapHeaders.indexOf('Color');
         const tColors = { '1': '#aed6f1', '2': '#a9dfbf', '3': '#f9e79f', '4': '#e59866' };
+
         paths.forEach(p => {
             const r = mapData.find(x => String(x[0]).trim() === p.id.trim());
             if (r) {
                 let fill = '#eee';
+                
+                // ★ 変更点: 軍事力タブ表示時は、編集中の値があればそれを優先して色計算に使う
+                let displayValue = null;
+                if (currentTab === '軍事力') {
+                    if (pendingGarrisons[p.id] !== undefined) {
+                        displayValue = pendingGarrisons[p.id];
+                    } else {
+                        displayValue = parseFloat(r[colIdx])||0;
+                    }
+                }
+
                 if (currentTab === '地形(1-4)') fill = tColors[String(r[colIdx])] || '#ccc';
-                else if (currentTab === '首都プラグ') fill = (String(r[colIdx])==='TURE') ? '#f1c40f' : '#ecf0f1';
+                else if (currentTab === '首都プラグ') fill = (String(r[colIdx])==='TRUE') ? '#f1c40f' : '#ecf0f1';
                 else if (['国','所有国'].includes(currentTab)) fill = (clrIdx>-1 ? r[clrIdx] : '#ccc');
                 else {
-                    let v = parseFloat(r[colIdx])||0;
-                    fill = `rgb(255, ${Math.floor(255-(v*2.55))}, ${Math.floor(255-(v*2.55))})`;
+                    // 数値データの可視化
+                    let v = (displayValue !== null) ? displayValue : (parseFloat(r[colIdx])||0);
+                    // 単純なヒートマップ (255~0)
+                    let intent = Math.min(255, v * 2.55); 
+                    fill = `rgb(255, ${Math.floor(255 - intent)}, ${Math.floor(255 - intent)})`;
                 }
                 
                 let stroke = '#000';
@@ -874,8 +945,11 @@
                 if (r[1] === currentPlayer) p.parentNode.appendChild(p);
             }
         });
+        
+        // ... (パン・ズーム初期化コードはそのまま) ...
         const svg = document.querySelector('#wrapper');
         if(svg && !panZoomInstance) {
+            // ... (省略) ...
             const eventsHandler = {
                 haltEventListeners: ['touchstart', 'touchend', 'touchmove', 'leave', 'touchcancel', 'gesturestart', 'gesturechange', 'gestureend'],
                 init: function(o) {
@@ -885,6 +959,8 @@
                     this.h.on('doubletap', ()=> i.zoomIn());
                     this.h.on('panstart panmove', e=>{ if(e.type==='panstart'){px=0;py=0;} i.panBy({x:e.deltaX-px, y:e.deltaY-py}); px=e.deltaX; py=e.deltaY; });
                     this.h.on('pinchstart pinchmove', e=>{ if(e.type==='pinchstart'){s=i.getZoom(); i.zoomAtPoint(s*e.scale, {x:e.center.x, y:e.center.y});} i.zoomAtPoint(s*e.scale, {x:e.center.x, y:e.center.y}); });
+                    
+                    // タッチ開始位置の記録
                     o.svgElement.addEventListener('touchstart', e=>{ touchStartX=e.touches[0].clientX; touchStartY=e.touches[0].clientY; }, {passive:false});
                 },
                 destroy: function(){ this.h.destroy(); }
@@ -899,9 +975,42 @@
         function m(ev){ if(d) { el.style.left=(il+ev.clientX-sx)+'px'; el.style.top=(it+ev.clientY-sy)+'px'; } }
         function e(){ d=false; }
     }
+
+    function sendMilitaryUpdates() {
+        if (Object.keys(pendingGarrisons).length === 0) return;
+        
+        const btn = document.getElementById('btnUpdateMilitary');
+        btn.disabled = true; 
+        btn.textContent = "送信中...";
+
+        fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+                action: "UPDATE_MILITARY",
+                country: currentPlayer,
+                updates: pendingGarrisons
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            alert(data.message || "更新しました");
+            pendingGarrisons = {};
+            updateUpdateBtnState();
+            loadGameData(); // データ再読み込み
+        })
+        .catch(err => {
+            alert("エラーが発生しました");
+            console.error(err);
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = "変更を一括更新";
+        });
+    }
     </script>
 </body>
 </html>
+
 
 
 
