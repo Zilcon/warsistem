@@ -857,7 +857,7 @@
             if (r) {
                 let fill = '#eee';
                 if (currentTab === '地形(1-4)') fill = tColors[String(r[colIdx])] || '#ccc';
-                else if (currentTab === '首都プラグ') fill = (String(r[colIdx])==='TRUE') ? '#f1c40f' : '#ecf0f1';
+                else if (currentTab === '首都プラグ') fill = (String(r[colIdx])==='TURE') ? '#f1c40f' : '#ecf0f1';
                 else if (['国','所有国'].includes(currentTab)) fill = (clrIdx>-1 ? r[clrIdx] : '#ccc');
                 else {
                     let v = parseFloat(r[colIdx])||0;
@@ -902,6 +902,7 @@
     </script>
 </body>
 </html>
+
 
 
 
