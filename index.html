@@ -211,7 +211,7 @@
     <div id="sim-panel-content" class="panel-content">
 
         <div class="status-grid">
-            <div class="status-item">国家軍事力（配置残）<span id="statMilitary">-</span></div>
+            <div class="status-item">国家軍事力（手札残）<span id="statMilitary">-</span></div>
         </div>
 
         <div class="mode-switch">
@@ -254,12 +254,6 @@
 
         <button id="sendBtn" class="btn btn-blue" style="margin-top:7px;">📤 送信</button>
 
-        <div id="militaryUpdateArea" style="display:none;margin-top:8px;">
-            <hr class="section-sep">
-            <label style="color:var(--warn);">⚠️ 軍事力変更（未保存）</label>
-            <button id="btnUpdateMilitary" class="btn btn-warn">一括更新</button>
-            <button id="btnClearMilitary"  class="btn btn-gray" style="margin-top:3px;">クリア</button>
-        </div>
 
         <hr class="section-sep">
         <div class="row">
@@ -281,7 +275,7 @@ const SVG_FILE = "Statemap.svg";
 let currentPlayer = "";
 let mapHeaders = [], mapData = [], adjacency = {};
 let countryDataList = [], warData = [], serverQueueData = [];
-let orders = [], pendingGarrisons = {};
+let orders = [];
 let isClickLocked = false;
 let currentTab = "国";
 let inputTargetMode = null;
@@ -289,8 +283,8 @@ let panZoomInstance = null;
 let touchStartX = 0, touchStartY = 0;
 const DRAG_THRESHOLD = 10;
 
-// 送信後にローカルで差し引く軍事力（UI反映用）
-let localDeployedDelta = 0; // 送信済み配置命令の累計
+// 送信後にローカルで差し引く手札軍事力（UI反映用）
+let localCommittedHand = 0; // 送信済み配置命令の累計
 
 // =========================================================
 // ヘルパー: 列インデックス取得
@@ -302,6 +296,78 @@ function devIdx()     { return 3; } // D列 = index 3
 
 function getFlag(row)  { const i=flagIdx();  return i>=0 ? String(row[i]||'') : ''; }
 function getOwner(row) { const i=ownerIdx(); return i>=0 ? row[i] : ''; }
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+function getPendingDeployTotal() {
+    return orders.filter(o => o.mission === '配置').reduce((sum, o) => sum + (parseInt(o.power) || 0), 0);
+}
+
+function getStateMilitaryPreview(includeLocalOrders = true) {
+    const milI = colIdx('軍事力');
+    const preview = {};
+    if (milI < 0) return preview;
+
+    mapData.forEach(r => { preview[r[0]] = parseInt(r[milI]) || 0; });
+
+    const queueOrders = serverQueueData
+        .filter(r => r[1] === currentPlayer)
+        .map(r => ({ mission: r[6], from: r[2], to: r[3], power: parseInt(r[4]) || 0 }));
+    const localOrders = includeLocalOrders ? orders.map(o => ({ ...o, power: parseInt(o.power) || 0 })) : [];
+
+    [...queueOrders, ...localOrders].forEach(o => {
+        if (!o.from || preview[o.from] === undefined) return;
+
+        if (o.mission === '配置') {
+            const target = o.to || o.from;
+            preview[target] = (preview[target] || 0) + Math.max(0, o.power || 0);
+            return;
+        }
+
+        if (o.mission === '攻撃') {
+            preview[o.from] = Math.max(0, (preview[o.from] || 0) - Math.max(0, o.power || 0));
+            return;
+        }
+
+        if (o.mission === '撤退') {
+            const movable = o.power > 0 ? Math.min(preview[o.from] || 0, o.power) : (preview[o.from] || 0);
+            preview[o.from] = Math.max(0, (preview[o.from] || 0) - movable);
+            if (o.to && o.to !== o.from) preview[o.to] = (preview[o.to] || 0) + movable;
+        }
+    });
+
+    return preview;
+}
+
+function getStateAvailableMilitary(stateId) {
+    const preview = getStateMilitaryPreview(true);
+    return preview[stateId] || 0;
+}
+
+function getAvailableHandMilitary() {
+    const myData = countryDataList.find(r => r[0] === currentPlayer);
+    if (!myData) return 0;
+    const hand = parseInt(myData[1]) || 0;
+    return Math.max(0, hand - localCommittedHand - getPendingDeployTotal());
+}
+
+function getGradientColorBy100(value) {
+    const num = parseFloat(value);
+    if (!num || num <= 0) return '#1e2330';
+    const t = clamp(num, 1, 100) / 100;
+    const rr = Math.round(200 - (90 * t));
+    const gg = Math.round(55 + (165 * t));
+    const bb = Math.round(48 + (70 * t));
+    return `rgb(${rr},${gg},${bb})`;
+}
+
+function getFlagVisual(flag) {
+    const val = String(flag || '').trim();
+    if (val === '首都' || val === 'TRUE') return { label: '首都', color: '#f1c40f' };
+    if (val === '港') return { label: '港', color: '#3498db' };
+    if (val === '航路') return { label: '航路', color: '#00d2ff' };
+    if (val === '基地') return { label: '基地', color: '#2ecc71' };
+    return { label: val || 'なし', color: '#556070' };
+}
 
 // =========================================================
 // LOGIN & SVG LOAD
@@ -369,81 +435,87 @@ function processAdjacency(raw) {
 function updateCountryStatsUI() {
     const myData = countryDataList.find(r => r[0] === currentPlayer);
     if (!myData) return;
-    const total    = parseInt(myData[1]) || 0;
-    const milI     = colIdx('軍事力');
-    let   deployed = 0;
-    mapData.forEach(r => { if (getOwner(r) === currentPlayer) deployed += (parseInt(r[milI]) || 0); });
-    // localDeployedDelta: 送信ボタン後に差し引く分
-    const remaining = total - deployed - localDeployedDelta;
+    const hand = parseInt(myData[1]) || 0;
+    const remaining = Math.max(0, hand - localCommittedHand - getPendingDeployTotal());
     const el = document.getElementById('statMilitary');
-    el.textContent   = `${remaining.toLocaleString()} / ${total.toLocaleString()}`;
-    el.style.color   = remaining < 0 ? '#f87171' : 'var(--text)';
-    document.body.dataset.totalMilitary    = total;
-    document.body.dataset.deployedMilitary = deployed;
+    el.textContent = `${remaining.toLocaleString()} / ${hand.toLocaleString()}`;
+    el.style.color = remaining <= 0 ? '#f87171' : 'var(--text)';
+    document.body.dataset.totalMilitary = hand;
+    document.body.dataset.availableMilitary = remaining;
 }
 
 // =========================================================
-// 補給度計算 (ダイクストラ: スコア = 100 - 5n + Σdev, 最大化)
+// 補給度計算
+// 「ステート距離的最短ルート」のうち、開発度合計が最大の経路を採用
 // =========================================================
 function calcSupply() {
-    const fi = flagIdx(), oi = ownerIdx(), di = devIdx();
-    if (fi < 0 || oi < 0) return {};
+    const oi = ownerIdx(), di = devIdx();
+    if (oi < 0) return {};
 
     const supplyMap = {};
     const countries = [...new Set(mapData.map(r => r[oi]).filter(Boolean))];
 
     countries.forEach(country => {
-        const myStates   = mapData.filter(r => r[oi] === country).map(r => r[0]);
+        const myRows = mapData.filter(r => r[oi] === country);
+        const myStates = myRows.map(r => r[0]);
         const myStateSet = new Set(myStates);
+        const seeds = [];
 
-        // 港ステート（自国）
-        const portStates = new Set(mapData.filter(r => r[oi]===country && getFlag(r)==='港').map(r=>r[0]));
-        // 航路ステート（自国）
-        const seaRoutes  = new Set(mapData.filter(r => r[oi]===country && getFlag(r)==='航路').map(r=>r[0]));
+        myRows.forEach(r => {
+            const flag = getFlag(r);
+            if (flag === '首都' || flag === '基地') seeds.push({ id: r[0], baseScore: 100 });
+            if (flag === '航路') seeds.push({ id: r[0], baseScore: 40 });
+        });
 
-        // ダイクストラ（スコア最大化）
-        // score[id] = 100 - 5*n + Σdev  (n=ステート数、dev=通過ステートの開発度合計)
-        // 初期: 首都/基地 → score=100, 航路ステート → score=40 (上書き)
-        const score = {}; // 未設定=-Inf
-        const visited = new Set();
+        const dist = {};
+        const devSum = {};
+        const baseScore = {};
+        const queue = [];
 
-        // 優先度付きキュー（単純配列、小規模なので可）
-        const pq = []; // {id, sc}
-
-        const push = (id, sc) => {
-            if (score[id] === undefined || sc > score[id]) {
-                score[id] = sc;
-                pq.push({ id, sc });
-                pq.sort((a,b) => b.sc - a.sc); // 降順
+        const pushSeed = (id, seedBase) => {
+            if (dist[id] === undefined || 0 < dist[id] || seedBase > (baseScore[id] || 0)) {
+                dist[id] = 0;
+                devSum[id] = 0;
+                baseScore[id] = seedBase;
+                queue.push(id);
             }
         };
 
-        // 起点1: 首都/基地 → score=100
-        mapData.forEach(r => {
-            if (r[oi] !== country) return;
-            const f = getFlag(r);
-            if (f === '首都' || f === '基地') push(r[0], 100);
-        });
+        seeds.forEach(seed => pushSeed(seed.id, seed.baseScore));
 
-        // 起点2: 自国航路ステート → score=40
-        seaRoutes.forEach(sid => push(sid, 40));
+        let head = 0;
+        while (head < queue.length) {
+            const cur = queue[head++];
+            const curDist = dist[cur];
+            const curDev = devSum[cur] || 0;
+            const curBase = baseScore[cur] || 0;
 
-        while (pq.length > 0) {
-            const { id, sc } = pq.shift();
-            if (visited.has(id)) continue;
-            visited.add(id);
+            (adjacency[cur] || []).forEach(nb => {
+                if (!myStateSet.has(nb)) return;
+                const nbRow = mapData.find(x => x[0] === nb);
+                const nd = curDist + 1;
+                const nde = curDev + (nbRow ? (parseFloat(nbRow[di]) || 0) : 0);
+                const shouldUpdate =
+                    dist[nb] === undefined ||
+                    nd < dist[nb] ||
+                    (nd === dist[nb] && (nde > (devSum[nb] || 0) || (nde === (devSum[nb] || 0) && curBase > (baseScore[nb] || 0))));
 
-            (adjacency[id] || []).forEach(nb => {
-                if (!myStateSet.has(nb) || visited.has(nb)) return;
-                const nbR  = mapData.find(x => x[0] === nb);
-                const dev  = nbR ? (parseFloat(nbR[di]) || 0) : 0;
-                const newSc = sc - 5 + dev; // n+1ステート分: -5、開発度: +dev
-                push(nb, newSc);
+                if (shouldUpdate) {
+                    dist[nb] = nd;
+                    devSum[nb] = nde;
+                    baseScore[nb] = curBase;
+                    queue.push(nb);
+                }
             });
         }
 
         myStates.forEach(sid => {
-            supplyMap[sid] = score[sid] !== undefined ? Math.max(0, score[sid]) : 0;
+            if (dist[sid] === undefined) {
+                supplyMap[sid] = 0;
+                return;
+            }
+            const value = (baseScore[sid] || 0) - (5 * dist[sid]) + (devSum[sid] || 0);
+            supplyMap[sid] = clamp(Math.round(value), 0, 100);
         });
     });
 
@@ -541,12 +613,8 @@ function initUI() {
         const m = document.querySelector('input[name="missionMode"]:checked').value;
         if (m !== 'DEPLOY') setInputMode('to');
     };
-    document.getElementById('addOrderBtn').onclick       = addOrder;
-    document.getElementById('sendBtn').onclick           = sendOrders;
-    document.getElementById('btnUpdateMilitary').onclick = sendMilitaryUpdates;
-    document.getElementById('btnClearMilitary').onclick  = () => {
-        pendingGarrisons = {}; renderMap(); updateUpdateBtnState();
-    };
+    document.getElementById('addOrderBtn').onclick = addOrder;
+    document.getElementById('sendBtn').onclick = sendOrders;
 
     const mapContainer = document.getElementById('map-container');
     const handleClickLogic = (e, cx, cy) => {
@@ -625,18 +693,6 @@ function handleMapClick(id) {
     const r = mapData.find(x => x[0] === id);
     const missionMode = document.querySelector('input[name="missionMode"]:checked').value;
 
-    // 軍事力タブ + 自国領 → 配置編集
-    if (currentTab === '軍事力' && r && getOwner(r) === currentPlayer) {
-        const milI       = colIdx('軍事力');
-        const currentVal = pendingGarrisons[id] !== undefined ? pendingGarrisons[id] : (parseInt(r[milI])||0);
-        const inputVal   = prompt(`${id} の軍事力を設定 (現在: ${currentVal})`, currentVal);
-        if (inputVal !== null) {
-            const newVal = parseInt(inputVal);
-            if (!isNaN(newVal) && newVal >= 0) { pendingGarrisons[id]=newVal; renderMap(); updateUpdateBtnState(); }
-            else alert("0以上の数値を入力してください");
-        }
-        return;
-    }
 
     if (!inputTargetMode) return;
 
@@ -665,9 +721,7 @@ function handleMapClick(id) {
             if (!checkAttackValid(fromVal, id)) return;
 
             // 兵力ヒント表示
-            const milI   = colIdx('軍事力');
-            const fromR  = mapData.find(x => x[0] === fromVal);
-            const maxPow = fromR ? (parseInt(fromR[milI])||0) : 0;
+            const maxPow = getStateAvailableMilitary(fromVal);
             const pow    = parseInt(document.getElementById('attackPower').value)||0;
             const alertEl = document.getElementById('powerAlert');
             if (pow > maxPow) {
@@ -732,29 +786,34 @@ function addOrder() {
     const from = document.getElementById('fromInput').value;
     if (!from) return alert("Fromを選択してください");
 
-    const milI  = colIdx('軍事力');
-    const fromR = mapData.find(x => x[0] === from);
+    const availableFrom = getStateAvailableMilitary(from);
 
     if (mode === 'ATTACK') {
         const to = document.getElementById('toInput').value;
         if (!to) return alert("Toを選択してください");
+        if (from === to) return alert("出発元と出発先に同じステートは指定できません");
         if (checkDuplicate('ATTACK', from, to)) return alert("既に同じ攻撃命令が存在します");
 
         const pow = parseInt(document.getElementById('attackPower').value);
-        if (isNaN(pow) || pow <= 0) return alert("兵力は1以上で");
-        const maxPow = fromR ? (parseInt(fromR[milI])||0) : 0;
-        if (pow > maxPow && !confirm(`${from} の軍事力(${maxPow})を超えています。続行しますか？`)) return;
+        if (isNaN(pow) || pow <= 0) return alert("兵力は1以上で指定してください");
+        if (pow > availableFrom) return alert(`${from} からは ${availableFrom} までしか出せません`);
 
-        const adj  = checkAdjacency(from, to);
+        const adj = checkAdjacency(from, to);
         const type = adj.sea ? "SEA" : "LAND";
         orders.push({ type, mission:"攻撃", from, to, power:pow });
 
     } else if (mode === 'RETREAT') {
         const to = document.getElementById('toInput').value;
         if (!to) return alert("撤退先を選択してください");
+        if (from === to) return alert("出発元と出発先に同じステートは指定できません");
         if (checkDuplicate('RETREAT', from, to)) return alert("この領土からの撤退命令は既に存在します");
+
         const powVal = document.getElementById('attackPower').value.trim();
-        const pow    = powVal === "" ? 0 : parseInt(powVal);
+        const pow = powVal === "" ? 0 : parseInt(powVal);
+        if (powVal !== "" && (isNaN(pow) || pow <= 0)) return alert("撤退兵数は1以上で指定してください");
+        if (pow > availableFrom) return alert(`${from} からは ${availableFrom} までしか撤退できません`);
+        if (pow === 0 && availableFrom <= 0) return alert(`${from} に動かせる軍事力がありません`);
+
         orders.push({ type:"LAND", mission:"撤退", from, to, power:pow });
 
     } else if (mode === 'DEPLOY') {
@@ -762,21 +821,22 @@ function addOrder() {
 
         const deployable = getDeployableStates();
         if (!deployable.has(from))
-            return alert(`${from} は配置不可ステートです\n（首都/基地または航路から陸路でつながっていません）`);
+            return alert(`${from} は配置不可ステートです
+（首都/基地または航路から陸路でつながっていません）`);
 
         const pow = parseInt(document.getElementById('attackPower').value);
-        if (isNaN(pow) || pow <= 0) return alert("配置兵数は1以上で");
+        if (isNaN(pow) || pow <= 0) return alert("配置兵数は1以上で指定してください");
 
-        const total         = parseInt(document.body.dataset.totalMilitary)||0;
-        const deployed      = parseInt(document.body.dataset.deployedMilitary)||0;
-        const pendingDeploy = orders.filter(o=>o.mission==='配置').reduce((s,o)=>s+o.power,0);
-        if (deployed + localDeployedDelta + pendingDeploy + pow > total)
-            return alert(`国家軍事力(${total})を超えて配置できません\nフィールド配置済み:${deployed+localDeployedDelta}、今回追加予定:${pendingDeploy+pow}`);
+        const availableHand = getAvailableHandMilitary();
+        if (pow > availableHand)
+            return alert(`手札軍事力が不足しています
+現在の手札残: ${availableHand}`);
 
         orders.push({ type:"LAND", mission:"配置", from, to:from, power:pow });
     }
 
     renderOrders();
+    updateCountryStatsUI();
     document.getElementById('fromInput').value = "";
     document.getElementById('toInput').value   = "";
     document.getElementById('powerAlert').style.display = 'none';
@@ -788,7 +848,7 @@ function renderOrders() {
     orders.forEach((o, i) => {
         const color = o.mission==='攻撃'?'#f87171':o.mission==='配置'?'#fb923c':'#60a5fa';
         const pwStr = o.mission==='撤退' ? (o.power>0?o.power:"全員") : o.power;
-        const toStr = o.mission==='配置' ? '-' : (o.to||'-');
+        const toStr = o.mission==='配置' ? '手札→' + o.from : (o.to||'-');
         const tr    = document.createElement('tr');
         tr.innerHTML = `<td style="color:${color};font-weight:bold;">${o.mission.charAt(0)}</td>
                         <td>${o.from}</td><td>${toStr}</td><td>${pwStr}</td>
@@ -797,16 +857,15 @@ function renderOrders() {
     });
     renderArrows();
 }
-window.delOrder = (i) => { orders.splice(i,1); renderOrders(); };
+window.delOrder = (i) => { orders.splice(i,1); renderOrders(); updateCountryStatsUI(); };
 
 // =========================================================
-// 送信（配置命令の分だけ即座にUIを減らす）
+// 送信（配置命令の分だけ即座に手札を減らす）
 // =========================================================
 function sendOrders() {
     const btn = document.getElementById('sendBtn');
     if (orders.length === 0) return alert("命令なし");
 
-    // 配置命令の合計を計算してローカルで差し引く
     const deployTotal = orders.filter(o=>o.mission==='配置').reduce((s,o)=>s+o.power,0);
 
     btn.disabled = true; btn.textContent = "送信中...";
@@ -815,19 +874,16 @@ function sendOrders() {
     .then(data => {
         alert(data.message);
         orders = [];
-
-        // 送信成功 → localDeployedDeltaを積算（サーバーからのデータが来るまでの暫定）
-        localDeployedDelta += deployTotal;
-        updateCountryStatsUI(); // UIに即反映
-
+        localCommittedHand += deployTotal;
         renderOrders();
-        loadGameData(); // サーバーからデータ取得後にlocalDeployedDeltaをリセット
+        updateCountryStatsUI();
+        loadGameData();
     })
     .catch(() => alert("送信エラー"))
     .finally(() => { btn.disabled=false; btn.textContent="📤 送信"; });
 }
 
-// loadGameData後にlocalDeployedDeltaをリセット（サーバーの値で上書きされるため）
+// loadGameData後にlocalCommittedHandをリセット（サーバーデータで上書き）
 const _origLoadGameData = loadGameData;
 function loadGameData() {
     fetch(API_URL)
@@ -836,35 +892,17 @@ function loadGameData() {
         if (data.MapData)       { mapHeaders = data.MapData[0]; mapData = data.MapData.slice(1); setupTabs(); renderMap(); }
         if (data.CountryData)   {
             countryDataList = data.CountryData.slice(1);
-            localDeployedDelta = 0; // サーバーデータで上書きされるのでリセット
+            localCommittedHand = 0;
             updateCountryStatsUI();
             setupDiplomacyUI();
         }
         if (data.AdjacencyData) { processAdjacency(data.AdjacencyData); }
         if (data.WarData)       { warData = data.WarData.slice(1); updateWarListUI(); }
-        if (data.QueueData)     { serverQueueData = data.QueueData.slice(1); renderServerQueue(); }
+        if (data.QueueData)     { serverQueueData = data.QueueData.slice(1); renderServerQueue(); renderMap(); }
     })
     .catch(err => console.error(err));
 }
 
-// =========================================================
-// 軍事力フィールド編集
-// =========================================================
-function updateUpdateBtnState() {
-    document.getElementById('militaryUpdateArea').style.display =
-        Object.keys(pendingGarrisons).length > 0 ? 'block' : 'none';
-}
-
-function sendMilitaryUpdates() {
-    if (Object.keys(pendingGarrisons).length === 0) return;
-    const btn = document.getElementById('btnUpdateMilitary');
-    btn.disabled=true; btn.textContent="送信中...";
-    fetch(API_URL, { method:'POST', body: JSON.stringify({ action:"UPDATE_MILITARY", country:currentPlayer, updates:pendingGarrisons }) })
-    .then(r=>r.json())
-    .then(data=>{ alert(data.message||"更新しました"); pendingGarrisons={}; updateUpdateBtnState(); loadGameData(); })
-    .catch(()=>alert("エラーが発生しました"))
-    .finally(()=>{ btn.disabled=false; btn.textContent="一括更新"; });
-}
 
 // =========================================================
 // 情報パネル（補給度 + 配置可否）
@@ -874,28 +912,38 @@ function showInfo(id) {
     if (!r) return;
     const b = document.getElementById('infoBox');
 
-    const supplyMap  = calcSupply();
+    const supplyMap = calcSupply();
     const deployable = getDeployableStates();
-    const supply     = supplyMap[id];
+    const supply = supplyMap[id];
+    const previewMilitary = getStateMilitaryPreview(true)[id] || 0;
+    const flagInfo = getFlagVisual(getFlag(r));
 
     let supplyStr='—', supplyColor='#8899b0';
     if (supply !== undefined) {
-        supplyStr   = supply + '%';
+        supplyStr = supply + '%';
         supplyColor = supply >= 80 ? '#6fcf97' : supply >= 50 ? '#f6b93b' : supply > 0 ? '#f87171' : '#556';
     }
-    const barW   = supply !== undefined ? Math.max(0, Math.min(100, supply)) : 0;
+    const barW = supply !== undefined ? Math.max(0, Math.min(100, supply)) : 0;
     const depStr = deployable.has(id)
         ? '<span style="color:#6fcf97;font-size:0.8em;">✅ 配置可</span>'
         : '<span style="color:#556;font-size:0.8em;">❌ 配置不可</span>';
 
     let h = `<h3 style="margin:0 0 6px;color:var(--text);font-size:1em;">${id}</h3>`;
+    h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">`;
+    h += `<span style="background:${flagInfo.color};color:${flagInfo.label==='航路'?'#001018':'#111'};padding:3px 8px;border-radius:999px;font-size:0.76em;font-weight:bold;">${flagInfo.label}</span>`;
+    h += `<span style="background:var(--bg3);padding:3px 8px;border-radius:999px;font-size:0.76em;color:var(--text);">軍事力 ${previewMilitary}</span>`;
+    h += `</div>`;
     h += `<div style="background:var(--bg3);border-left:3px solid ${supplyColor};padding:6px 8px;margin-bottom:6px;border-radius:4px;font-size:0.82em;">`;
     h += `<strong style="color:var(--text2);">補給度:</strong> <span style="color:${supplyColor};font-size:1.15em;font-weight:bold;">${supplyStr}</span>`;
     h += `<div style="margin-top:4px;background:var(--border);border-radius:2px;height:6px;"><div style="width:${barW}%;height:100%;background:${supplyColor};border-radius:2px;"></div></div>`;
     h += `<div style="margin-top:4px;">${depStr}</div></div>`;
     h += `<ul style="margin:0;padding-left:14px;font-size:0.8em;color:var(--text2);">`;
     mapHeaders.forEach((hd, i) => {
-        if (!['Color','ID'].includes(hd)) h += `<li style="margin-bottom:2px;"><strong style="color:var(--text);">${hd}:</strong> ${r[i]}</li>`;
+        if (['Color','ID'].includes(hd)) return;
+        let value = r[i];
+        if (hd === '軍事力') value = previewMilitary;
+        if (hd === '首都プラグ') value = flagInfo.label;
+        h += `<li style="margin-bottom:2px;"><strong style="color:var(--text);">${hd}:</strong> ${value}</li>`;
     });
     b.innerHTML = h + "</ul>";
 }
@@ -938,7 +986,7 @@ function setupTabs() {
     mapHeaders.forEach((h, i) => {
         if (i===0 || h==='Color' || h==='ID') return;
         const b = document.createElement('button');
-        b.textContent = h;
+        b.textContent = h === '首都プラグ' ? '首都/港/航路' : h;
         if (h===currentTab) b.classList.add('active');
         b.onclick = () => {
             currentTab=h;
@@ -947,7 +995,6 @@ function setupTabs() {
         };
         c.appendChild(b);
     });
-    // 補給度タブ
     const sb = document.createElement('button');
     sb.textContent = '補給度';
     if (currentTab==='補給度') sb.classList.add('active');
@@ -963,41 +1010,34 @@ function setupTabs() {
 // マップ描画
 // =========================================================
 function renderMap() {
-    const paths       = document.querySelectorAll('path');
-    const ci          = mapHeaders.indexOf(currentTab);
-    const clrI        = mapHeaders.indexOf('Color');
-    const tColors     = {'1':'#2a4a6a','2':'#1e4d30','3':'#4a3d1a','4':'#5a2a10'};
+    const paths = document.querySelectorAll('path');
+    const ci = mapHeaders.indexOf(currentTab);
+    const clrI = mapHeaders.indexOf('Color');
+    const tColors = {'1':'#2a4a6a','2':'#1e4d30','3':'#4a3d1a','4':'#5a2a10'};
     const isSupplyTab = currentTab === '補給度';
-    const supplyMap   = isSupplyTab ? calcSupply() : null;
+    const supplyMap = isSupplyTab ? calcSupply() : null;
+    const militaryPreview = getStateMilitaryPreview(true);
 
     paths.forEach(p => {
         const r = mapData.find(x => String(x[0]).trim() === p.id.trim());
         if (!r) return;
 
         let fill = '#1e2330';
-        let displayValue = null;
-        if (currentTab === '軍事力') {
-            displayValue = pendingGarrisons[p.id] !== undefined ? pendingGarrisons[p.id] : (parseFloat(r[ci])||0);
-        }
 
         if (isSupplyTab) {
-            const s = supplyMap[p.id];
-            if (s === undefined || s === 0) fill = '#1e2330';
-            else {
-                const t = s / 100;
-                const rr = Math.round(30  + (180-30)*(1-t));
-                const gg = Math.round(100 + (200-100)*t);
-                const bb = Math.round(30  + (50-30)*t);
-                fill = `rgb(${rr},${gg},${bb})`;
-            }
+            fill = getGradientColorBy100(supplyMap[p.id] || 0);
         } else if (currentTab === '地形(1-4)') {
             fill = tColors[String(r[ci])] || '#2a2e3a';
         } else if (currentTab === '首都プラグ') {
-            fill = String(r[ci])==='TRUE' ? '#7d6a00' : '#1e2330';
+            fill = getFlagVisual(getFlag(r) || String(r[ci] || '')).color;
         } else if (['国','所有国'].includes(currentTab)) {
             fill = clrI > -1 ? r[clrI] : '#2a2e3a';
+        } else if (currentTab === '軍事力') {
+            fill = getGradientColorBy100(militaryPreview[p.id] || 0);
+        } else if (String(currentTab).includes('開発')) {
+            fill = getGradientColorBy100(parseFloat(r[ci]) || 0);
         } else {
-            const v = displayValue !== null ? displayValue : (parseFloat(r[ci])||0);
+            const v = parseFloat(r[ci]) || 0;
             const intensity = Math.min(1, v / 200);
             const rr = Math.round(20 + 200*intensity);
             const gg = Math.round(20 + 20*(1-intensity));
@@ -1006,15 +1046,18 @@ function renderMap() {
 
         let stroke = '#333';
         if (!['所有国','国'].includes(currentTab) && clrI > -1) stroke = r[clrI];
+        if (currentTab === '首都プラグ') {
+            const flagInfo = getFlagVisual(getFlag(r) || String(r[ci] || ''));
+            stroke = flagInfo.label === '航路' ? '#7cf3ff' : flagInfo.label === '港' ? '#9fd6ff' : flagInfo.label === '首都' ? '#fff2a8' : '#6fcf97';
+        }
         if (getOwner(r) === currentPlayer) stroke = '#f1c40f';
 
-        p.style.fill        = fill;
-        p.style.stroke      = stroke;
+        p.style.fill = fill;
+        p.style.stroke = stroke;
         p.style.strokeWidth = getOwner(r)===currentPlayer ? '1.5px' : '0.5px';
         if (getOwner(r) === currentPlayer) p.parentNode.appendChild(p);
     });
 
-    // panZoom初期化
     const innerSvg = document.querySelector('#wrapper svg');
     if (innerSvg && !panZoomInstance) {
         const eventsHandler = {
