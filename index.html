@@ -292,6 +292,9 @@ let inputTargetMode = null;
 let panZoomInstance = null;
 let touchStartX = 0, touchStartY = 0;
 const DRAG_THRESHOLD = 10;
+let cachedSupplyMap = null;
+let cachedDeployableStates = null;
+let cachedDeployablePlayer = null;
 
 // 送信後にローカルで差し引く手札軍事力（UI反映用）
 let localCommittedHand = 0; // 送信済み配置命令の累計
@@ -307,6 +310,11 @@ function devIdx()     { return 3; } // D列 = index 3
 function getFlag(row)  { const i=flagIdx();  return i>=0 ? String(row[i]||'') : ''; }
 function getOwner(row) { const i=ownerIdx(); return i>=0 ? row[i] : ''; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function invalidateDerivedCaches() {
+    cachedSupplyMap = null;
+    cachedDeployableStates = null;
+    cachedDeployablePlayer = null;
+}
 
 function getPendingDeployTotal() {
     const milI = colIdx('軍事力');
@@ -462,7 +470,7 @@ function loadGameData() {
     fetch(API_URL)
     .then(r => r.json())
     .then(data => {
-        if (data.MapData)       { mapHeaders = data.MapData[0]; mapData = data.MapData.slice(1); setupTabs(); renderMap(); }
+        if (data.MapData)       { mapHeaders = data.MapData[0]; mapData = data.MapData.slice(1); invalidateDerivedCaches(); setupTabs(); renderMap(); }
         if (data.CountryData)   { countryDataList = data.CountryData.slice(1); updateCountryStatsUI(); setupDiplomacyUI(); }
         if (data.AdjacencyData) { processAdjacency(data.AdjacencyData); }
         if (data.WarData)       { warData = data.WarData.slice(1); updateWarListUI(); }
@@ -474,6 +482,7 @@ function loadGameData() {
 function processAdjacency(raw) {
     adjacency = {};
     raw.slice(1).forEach(r => adjacency[r[0]] = r.slice(1).filter(n => n));
+    invalidateDerivedCaches();
 }
 
 // =========================================================
@@ -496,42 +505,47 @@ function updateCountryStatsUI() {
 // 「ステート距離的最短ルート」のうち、開発度合計が最大の経路を採用
 // =========================================================
 function calcSupply() {
+    if (cachedSupplyMap) return cachedSupplyMap;
+
     const oi = ownerIdx(), di = devIdx();
     if (oi < 0) return {};
 
     const supplyMap = {};
     const countries = [...new Set(mapData.map(r => r[oi]).filter(Boolean))];
+    const rowById = Object.fromEntries(mapData.map(r => [r[0], r]));
 
-    const better = (cand, prev) => {
+    const isBetter = (cand, prev) => {
+        if (!cand) return false;
         if (!prev) return true;
-        if ((cand.score || 0) !== (prev.score || 0)) return (cand.score || 0) > (prev.score || 0);
-        if ((cand.dev || 0) !== (prev.dev || 0)) return (cand.dev || 0) > (prev.dev || 0);
-        return (cand.dist || 0) < (prev.dist || 0);
+        if (cand.dist !== prev.dist) return cand.dist < prev.dist;
+        if (cand.dev !== prev.dev) return cand.dev > prev.dev;
+        return (cand.base || 0) > (prev.base || 0);
     };
 
     const bfsBest = (seedIds, allowedSet, baseScore) => {
         const best = {};
-        const q = [];
+        const queue = [];
         seedIds.forEach(id => {
-            best[id] = { dist: 0, dev: 0, score: baseScore };
-            q.push(id);
+            if (!allowedSet.has(id) || best[id]) return;
+            best[id] = { dist: 0, dev: 0, base: baseScore };
+            queue.push(id);
         });
 
         let head = 0;
-        while (head < q.length) {
-            const cur = q[head++];
+        while (head < queue.length) {
+            const cur = queue[head++];
             const curInfo = best[cur];
             (adjacency[cur] || []).forEach(nb => {
                 if (!allowedSet.has(nb)) return;
-                const row = mapData.find(x => x[0] === nb);
+                const nbRow = rowById[nb];
                 const cand = {
                     dist: curInfo.dist + 1,
-                    dev: curInfo.dev + (row ? (parseFloat(row[di]) || 0) : 0),
+                    dev: curInfo.dev + (nbRow ? (parseFloat(nbRow[di]) || 0) : 0),
+                    base: baseScore,
                 };
-                cand.score = baseScore - cand.dist + cand.dev;
-                if (better(cand, best[nb])) {
+                if (isBetter(cand, best[nb])) {
                     best[nb] = cand;
-                    q.push(nb);
+                    queue.push(nb);
                 }
             });
         }
@@ -546,47 +560,62 @@ function calcSupply() {
         const ports = myRows.filter(r => getFlag(r) === '港').map(r => r[0]);
         const routes = new Set(myRows.filter(r => getFlag(r) === '航路').map(r => r[0]));
 
-        const landReach = new Set();
-        const landQueue = [...capitals];
-        capitals.forEach(id => landReach.add(id));
+        // 1) 首都起点：自国領土のみ、最短ルート優先、同距離なら開発度合計最大
+        const landBest = capitals.length ? bfsBest(capitals, myStateSet, 100) : {};
+
+        // 2) 海上補給起点：首都から陸路で到達できる港 → 航路ネットワークでつながる港群 を種にする
+        const landOnlySet = new Set(myStates.filter(id => !routes.has(id)));
+        const capitalLandReach = new Set();
+        const landQueue = [];
+        capitals.forEach(id => {
+            if (!landOnlySet.has(id) || capitalLandReach.has(id)) return;
+            capitalLandReach.add(id);
+            landQueue.push(id);
+        });
         let head = 0;
         while (head < landQueue.length) {
             const cur = landQueue[head++];
             (adjacency[cur] || []).forEach(nb => {
-                if (!myStateSet.has(nb) || routes.has(nb) || landReach.has(nb)) return;
-                landReach.add(nb);
+                if (!landOnlySet.has(nb) || capitalLandReach.has(nb)) return;
+                capitalLandReach.add(nb);
                 landQueue.push(nb);
             });
         }
+        const capitalConnectedPorts = ports.filter(id => capitalLandReach.has(id));
 
-        const capitalConnectedPorts = ports.filter(id => landReach.has(id));
         const seaAllowed = new Set([...ports, ...routes]);
-        const seaReachablePorts = new Set(capitalConnectedPorts);
-        const seaQueue = [...capitalConnectedPorts];
+        const seaNetworkReach = new Set();
+        const seaQueue = [];
+        capitalConnectedPorts.forEach(id => {
+            if (!seaAllowed.has(id) || seaNetworkReach.has(id)) return;
+            seaNetworkReach.add(id);
+            seaQueue.push(id);
+        });
         head = 0;
         while (head < seaQueue.length) {
             const cur = seaQueue[head++];
             (adjacency[cur] || []).forEach(nb => {
-                if (!seaAllowed.has(nb) || seaReachablePorts.has(nb)) return;
-                seaReachablePorts.add(nb);
+                if (!seaAllowed.has(nb) || seaNetworkReach.has(nb)) return;
+                seaNetworkReach.add(nb);
                 seaQueue.push(nb);
             });
         }
-        const maritimeSeedPorts = ports.filter(id => seaReachablePorts.has(id));
-
-        const landBest = capitals.length ? bfsBest(capitals, myStateSet, 100) : {};
+        const maritimeSeedPorts = ports.filter(id => seaNetworkReach.has(id));
         const seaBest = maritimeSeedPorts.length ? bfsBest(maritimeSeedPorts, myStateSet, 40) : {};
 
         myStates.forEach(stateId => {
-            const a = landBest[stateId];
-            const b = seaBest[stateId];
-            let chosen = null;
-            if (better(a || {}, b || null)) chosen = a || null;
-            else chosen = b || a || null;
-            supplyMap[stateId] = chosen ? Math.max(0, Math.round(chosen.score || 0)) : 0;
+            const land = landBest[stateId] || null;
+            const sea = seaBest[stateId] || null;
+            const chosen = isBetter(land, sea) ? land : (isBetter(sea, land) ? sea : (land || sea));
+            if (!chosen) {
+                supplyMap[stateId] = 0;
+                return;
+            }
+            supplyMap[stateId] = Math.max(0, Math.round((chosen.base || 0) - (5 * chosen.dist) + (chosen.dev || 0)));
         });
     });
 
+    cachedSupplyMap = supplyMap;
     return supplyMap;
 }
 
@@ -595,24 +624,23 @@ function calcSupply() {
 // 条件: 首都/基地から自国BFS到達 OR 自国航路ステートから自国BFS到達
 // =========================================================
 function getDeployableStates() {
-    const fi = flagIdx(), oi = ownerIdx();
-    if (fi < 0 || oi < 0) return new Set();
+    if (cachedDeployableStates && cachedDeployablePlayer === currentPlayer) return cachedDeployableStates;
 
-    const myStates   = mapData.filter(r => r[oi] === currentPlayer).map(r => r[0]);
+    const oi = ownerIdx();
+    if (oi < 0) return new Set();
+
+    const myRows = mapData.filter(r => r[oi] === currentPlayer);
+    const myStates = myRows.map(r => r[0]);
     const myStateSet = new Set(myStates);
-    const seaRoutes  = new Set(mapData.filter(r => r[oi]===currentPlayer && getFlag(r)==='航路').map(r=>r[0]));
+    const seaRoutes = new Set(myRows.filter(r => getFlag(r) === '航路').map(r => r[0]));
 
     const reachable = new Set();
-    const queue     = [];
+    const queue = [];
 
-    // 起点: 首都/基地
-    mapData.forEach(r => {
-        if (r[oi] !== currentPlayer) return;
+    myRows.forEach(r => {
         const f = getFlag(r);
         if (f === '首都' || f === '基地') { reachable.add(r[0]); queue.push(r[0]); }
     });
-
-    // 起点2: 自国航路ステート（港扱いで陸路BFS拡張）
     seaRoutes.forEach(sid => {
         if (!reachable.has(sid)) { reachable.add(sid); queue.push(sid); }
     });
@@ -622,9 +650,13 @@ function getDeployableStates() {
         const cur = queue[head++];
         (adjacency[cur] || []).forEach(nb => {
             if (!myStateSet.has(nb) || reachable.has(nb)) return;
-            reachable.add(nb); queue.push(nb);
+            reachable.add(nb);
+            queue.push(nb);
         });
     }
+
+    cachedDeployableStates = reachable;
+    cachedDeployablePlayer = currentPlayer;
     return reachable;
 }
 
