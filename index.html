@@ -116,6 +116,7 @@
             .row { gap:4px; }
             .mode-switch label { padding:4px 3px; font-size:0.7em; }
             th,td { padding:2px; font-size:0.7em; }
+            .status-grid { grid-template-columns:1fr; gap:4px; }
         }
 
         /* ===== FORM ELEMENTS ===== */
@@ -144,10 +145,10 @@
         /* ===== STATUS ===== */
         .status-grid {
             background:var(--bg3); border-radius:5px; padding:8px 10px; margin-bottom:8px;
-            border-left:4px solid var(--danger);
+            border-left:4px solid var(--danger); display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;
         }
-        .status-item { font-size:0.8em; color:var(--text2); }
-        .status-item span { display:block; font-weight:bold; color:var(--text); font-size:1.15em; margin-top:1px; }
+        .status-item { font-size:0.78em; color:var(--text2); min-width:0; }
+        .status-item span { display:block; font-weight:bold; color:var(--text); font-size:1.05em; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
         /* ===== MODE SWITCH ===== */
         .mode-switch { display:flex; gap:4px; margin-bottom:6px; }
@@ -211,7 +212,9 @@
     <div id="sim-panel-content" class="panel-content">
 
         <div class="status-grid">
-            <div class="status-item">国家軍事力（手札残）<span id="statMilitary">-</span></div>
+            <div class="status-item">国家軍事力<span id="statMilitary">-</span></div>
+            <div class="status-item">軍事技術力<span id="statTech">-</span></div>
+            <div class="status-item">充足率<span id="statFulfillment">-</span></div>
         </div>
 
         <div class="mode-switch">
@@ -392,6 +395,30 @@ function getFlagVisual(flag) {
     return { label: val || 'なし', color: '#556070', short: '', stroke: '#556070' };
 }
 
+function getCountryRow(countryName = currentPlayer) {
+    return countryDataList.find(r => r[0] === countryName) || null;
+}
+
+function getCountryColor(countryName, fallback = '#2a2e3a') {
+    const row = getCountryRow(countryName);
+    return row && row[4] ? row[4] : fallback;
+}
+
+function getCountryTech(countryName = currentPlayer) {
+    const row = getCountryRow(countryName);
+    return row ? row[5] : '';
+}
+
+function getCountryFulfillment(countryName = currentPlayer) {
+    const row = getCountryRow(countryName);
+    return row ? row[6] : '';
+}
+
+function getOverlayScale() {
+    const zoom = panZoomInstance ? panZoomInstance.getZoom() : 1;
+    return clamp(1 / Math.pow(Math.max(zoom, 1), 0.22), 0.72, 1.28);
+}
+
 function syncPendingStateUI() {
     const area = document.getElementById('militaryUpdateArea');
     const txt = document.getElementById('deployPreviewText');
@@ -489,13 +516,19 @@ function processAdjacency(raw) {
 // 国家軍事力 残量
 // =========================================================
 function updateCountryStatsUI() {
-    const myData = countryDataList.find(r => r[0] === currentPlayer);
+    const myData = getCountryRow(currentPlayer);
     if (!myData) return;
     const hand = parseInt(myData[1]) || 0;
     const remaining = Math.max(0, hand - localCommittedHand - getPendingDeployTotal());
-    const el = document.getElementById('statMilitary');
-    el.textContent = `${remaining.toLocaleString()} / ${hand.toLocaleString()}`;
-    el.style.color = remaining <= 0 ? '#f87171' : remaining <= Math.max(10, hand * 0.15) ? '#f6b93b' : 'var(--text)';
+    const militaryEl = document.getElementById('statMilitary');
+    const techEl = document.getElementById('statTech');
+    const fulfillmentEl = document.getElementById('statFulfillment');
+
+    militaryEl.textContent = `残り：${remaining.toLocaleString()}`;
+    militaryEl.style.color = remaining <= 0 ? '#f87171' : remaining <= Math.max(10, hand * 0.15) ? '#f6b93b' : 'var(--text)';
+    if (techEl) techEl.textContent = `${getCountryTech(currentPlayer) || 0}`;
+    if (fulfillmentEl) fulfillmentEl.textContent = `${getCountryFulfillment(currentPlayer) || 0}`;
+
     document.body.dataset.totalMilitary = hand;
     document.body.dataset.availableMilitary = remaining;
 }
@@ -1000,7 +1033,7 @@ function loadGameData() {
     fetch(API_URL)
     .then(r => r.json())
     .then(data => {
-        if (data.MapData)       { mapHeaders = data.MapData[0]; mapData = data.MapData.slice(1); setupTabs(); renderMap(); }
+        if (data.MapData)       { mapHeaders = data.MapData[0]; mapData = data.MapData.slice(1); invalidateDerivedCaches(); setupTabs(); renderMap(); }
         if (data.CountryData)   {
             countryDataList = data.CountryData.slice(1);
             localCommittedHand = 0;
@@ -1022,7 +1055,7 @@ function sendMilitaryUpdates() {
     const btn = document.getElementById('btnUpdateMilitary');
     const spent = getPendingDeployTotal();
     btn.disabled = true; btn.textContent = "適用中...";
-    fetch(API_URL, { method:'POST', body: JSON.stringify({ action:"UPDATE_MILITARY", country:currentPlayer, updates:pendingGarrisons }) })
+    fetch(API_URL, { method:'POST', body: JSON.stringify({ action:"UPDATE_MILITARY", country:currentPlayer, updates:pendingGarrisons, spentHand: spent }) })
     .then(r=>r.json())
     .then(data=>{
         alert(data.message||"配置を反映しました");
@@ -1050,6 +1083,7 @@ function showInfo(id) {
     const supply = supplyMap[id];
     const previewMilitary = getStateMilitaryPreview(true)[id] || 0;
     const flagInfo = getFlagVisual(getFlag(r));
+    const ownerName = getOwner(r);
 
     let supplyStr='—', supplyColor='#8899b0';
     if (supply !== undefined) {
@@ -1065,6 +1099,11 @@ function showInfo(id) {
     h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">`;
     h += `<span style="background:${flagInfo.color};color:${flagInfo.label==='航路'?'#001018':'#111'};padding:3px 8px;border-radius:999px;font-size:0.76em;font-weight:bold;border:1px solid ${flagInfo.stroke};box-shadow:0 0 10px ${flagInfo.color}55;">${flagInfo.label}</span>`;
     h += `<span style="background:var(--bg3);padding:3px 8px;border-radius:999px;font-size:0.76em;color:var(--text);">軍事力 ${previewMilitary}</span>`;
+    h += `<span style="background:${getCountryColor(ownerName, '#2a2e3a')};padding:3px 8px;border-radius:999px;font-size:0.76em;color:#fff;border:1px solid rgba(255,255,255,0.25);">${ownerName || '無所属'}</span>`;
+    h += `</div>`;
+    h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;font-size:0.76em;">`;
+    h += `<span style="background:var(--bg3);padding:3px 8px;border-radius:999px;color:var(--text);">技術 ${getCountryTech(ownerName) || 0}</span>`;
+    h += `<span style="background:var(--bg3);padding:3px 8px;border-radius:999px;color:var(--text);">充足 ${getCountryFulfillment(ownerName) || 0}</span>`;
     h += `</div>`;
     h += `<div style="background:var(--bg3);border-left:3px solid ${supplyColor};padding:6px 8px;margin-bottom:6px;border-radius:4px;font-size:0.82em;">`;
     h += `<strong style="color:var(--text2);">補給度:</strong> <span style="color:${supplyColor};font-size:1.15em;font-weight:bold;">${supplyStr}</span>`;
@@ -1155,6 +1194,8 @@ function renderMap() {
         const r = mapData.find(x => String(x[0]).trim() === p.id.trim());
         if (!r) return;
 
+        const owner = getOwner(r);
+        const ownerColor = getCountryColor(owner, clrI > -1 ? r[clrI] : '#2a2e3a');
         let fill = '#1e2330';
 
         if (isSupplyTab) {
@@ -1164,7 +1205,7 @@ function renderMap() {
         } else if (currentTab === '首都プラグ') {
             fill = getFlagVisual(getFlag(r) || String(r[ci] || '')).color;
         } else if (['国','所有国'].includes(currentTab)) {
-            fill = clrI > -1 ? r[clrI] : '#2a2e3a';
+            fill = ownerColor;
         } else if (currentTab === '軍事力') {
             fill = getGradientColorBy100(militaryPreview[p.id] || 0);
         } else if (String(currentTab).includes('開発')) {
@@ -1177,17 +1218,16 @@ function renderMap() {
             fill = `rgb(${rr},${gg},20)`;
         }
 
-        let stroke = '#333';
-        if (!['所有国','国'].includes(currentTab) && clrI > -1) stroke = r[clrI];
+        let stroke = ownerColor;
         if (currentTab === '首都プラグ') {
             const flagInfo = getFlagVisual(getFlag(r) || String(r[ci] || ''));
-            stroke = flagInfo.label === '航路' ? '#7cf3ff' : flagInfo.label === '港' ? '#9fd6ff' : flagInfo.label === '首都' ? '#fff2a8' : '#6fcf97';
+            stroke = flagInfo.stroke;
         }
         if (getOwner(r) === currentPlayer) stroke = '#f1c40f';
 
         p.style.fill = fill;
         p.style.stroke = stroke;
-        p.style.strokeWidth = getOwner(r)===currentPlayer ? '1.5px' : '0.5px';
+        p.style.strokeWidth = getOwner(r)===currentPlayer ? '1.6px' : '0.7px';
         if (getOwner(r) === currentPlayer) p.parentNode.appendChild(p);
     });
 
@@ -1262,8 +1302,7 @@ function renderStrategicMarkers() {
     layer.id = 'strategic-marker-layer';
     layer.style.pointerEvents = 'none';
 
-    const zoom = panZoomInstance ? panZoomInstance.getZoom() : 1;
-    const sc = 1 / zoom;
+    const sc = getOverlayScale();
 
     mapData.forEach(r => {
         const flagInfo = getFlagVisual(getFlag(r));
@@ -1271,14 +1310,14 @@ function renderStrategicMarkers() {
         const c = getPathCenter(r[0]);
         if (!c) return;
 
-        const radius = flagInfo.label === '首都' ? 9 * sc : 7 * sc;
+        const radius = flagInfo.label === '首都' ? 14 * sc : 11 * sc;
         const outer = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         outer.setAttribute('cx', c.x);
         outer.setAttribute('cy', c.y);
         outer.setAttribute('r', radius);
         outer.setAttribute('fill', flagInfo.color);
         outer.setAttribute('stroke', flagInfo.stroke);
-        outer.setAttribute('stroke-width', 2 * sc);
+        outer.setAttribute('stroke-width', 2.8 * sc);
         outer.setAttribute('opacity', '0.95');
         layer.appendChild(outer);
 
@@ -1292,13 +1331,13 @@ function renderStrategicMarkers() {
 
         const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         txt.setAttribute('x', c.x);
-        txt.setAttribute('y', c.y + (flagInfo.label === '首都' ? 3.2 * sc : 2.8 * sc));
+        txt.setAttribute('y', c.y + (flagInfo.label === '首都' ? 4.6 * sc : 3.8 * sc));
         txt.setAttribute('text-anchor', 'middle');
-        txt.setAttribute('font-size', flagInfo.label === '首都' ? 9 * sc : 7.5 * sc);
+        txt.setAttribute('font-size', flagInfo.label === '首都' ? 13 * sc : 10 * sc);
         txt.setAttribute('font-weight', 'bold');
         txt.setAttribute('fill', '#ffffff');
         txt.setAttribute('stroke', '#12151a');
-        txt.setAttribute('stroke-width', 2 * sc);
+        txt.setAttribute('stroke-width', 2.8 * sc);
         txt.setAttribute('paint-order', 'stroke');
         txt.textContent = flagInfo.short;
         layer.appendChild(txt);
@@ -1317,8 +1356,7 @@ function renderArrows() {
     layer.id = 'arrow-layer';
     layer.style.pointerEvents = 'none';
 
-    const zoom = panZoomInstance ? panZoomInstance.getZoom() : 1;
-    const sc   = 1 / zoom;
+    const sc = getOverlayScale();
 
     let defs = svg.querySelector('defs');
     if (!defs) { defs=document.createElementNS('http://www.w3.org/2000/svg','defs'); svg.insertBefore(defs,svg.firstChild); }
@@ -1332,13 +1370,13 @@ function renderArrows() {
         const m=document.createElementNS('http://www.w3.org/2000/svg','marker');
         m.setAttribute('id',mid);
         m.setAttribute('markerUnits','userSpaceOnUse');
-        m.setAttribute('markerWidth', 10*sc);
-        m.setAttribute('markerHeight', 7*sc);
-        m.setAttribute('refX', 8*sc);
-        m.setAttribute('refY', 3.5*sc);
+        m.setAttribute('markerWidth', 16*sc);
+        m.setAttribute('markerHeight', 12*sc);
+        m.setAttribute('refX', 13*sc);
+        m.setAttribute('refY', 6*sc);
         m.setAttribute('orient','auto');
         const path=document.createElementNS('http://www.w3.org/2000/svg','path');
-        path.setAttribute('d',`M0,0 L${10*sc},${3.5*sc} L0,${7*sc} Z`);
+        path.setAttribute('d',`M0,0 L${16*sc},${6*sc} L0,${12*sc} Z`);
         path.setAttribute('fill',color);
         m.appendChild(path); defs.appendChild(m);
     });
@@ -1346,14 +1384,14 @@ function renderArrows() {
     function drawArrow(fromId, toId, color, markerId, dashed, label) {
         const fc=getPathCenter(fromId), tc=getPathCenter(toId);
         if (!fc||!tc) return;
-        const lw = 2.5*sc;
+        const lw = 4.2*sc;
         const line=document.createElementNS('http://www.w3.org/2000/svg','line');
         line.setAttribute('x1',fc.x); line.setAttribute('y1',fc.y);
         line.setAttribute('x2',tc.x); line.setAttribute('y2',tc.y);
         line.setAttribute('stroke',color);
         line.setAttribute('stroke-width',lw);
         line.setAttribute('stroke-linecap','round');
-        if (dashed) line.setAttribute('stroke-dasharray',`${7*sc},${3*sc}`);
+        if (dashed) line.setAttribute('stroke-dasharray',`${10*sc},${4*sc}`);
         line.setAttribute('marker-end',`url(#${markerId})`);
         line.setAttribute('opacity','0.9');
         layer.appendChild(line);
@@ -1361,13 +1399,13 @@ function renderArrows() {
         if (label) {
             const mx=(fc.x+tc.x)/2, my=(fc.y+tc.y)/2;
             const txt=document.createElementNS('http://www.w3.org/2000/svg','text');
-            txt.setAttribute('x',mx); txt.setAttribute('y',my-4*sc);
+            txt.setAttribute('x',mx); txt.setAttribute('y',my-6*sc);
             txt.setAttribute('text-anchor','middle');
-            txt.setAttribute('font-size',10*sc);
+            txt.setAttribute('font-size',13*sc);
             txt.setAttribute('fill',color);
             txt.setAttribute('font-weight','bold');
             txt.setAttribute('stroke','#12151a');
-            txt.setAttribute('stroke-width',2.5*sc);
+            txt.setAttribute('stroke-width',3.4*sc);
             txt.setAttribute('paint-order','stroke');
             txt.textContent=label;
             layer.appendChild(txt);
